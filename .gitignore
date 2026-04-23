@@ -1,0 +1,57 @@
+# --- segredos ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+cookies.txt
+credentials.json
+secrets.json
+
+# --- virtualenv ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- caches Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+
+# --- caches de tooling ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.cache/
+
+# --- build / distribuição ---
+build/
+dist/
+
+# --- runtime do bot ---
+*.log
+*.log.*
+temp_*.jpg
+
+# --- backups e temporários ---
+*.bak
+*.orig
+*~
+*.swp
+*.swo
+
+# --- editores / OS / agents ---
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 220" width="860" height="220" role="img" aria-label="unitedgram">
+  <title>unitedgram</title>
+
+  <!-- ICON: two offset blocks connected by bidirectional right-angle arrows -->
+  <g transform="translate(36, 30)">
+    <!-- Block A (source / tracker) -->
+    <rect x="0" y="0" width="56" height="56" fill="#0f766e"/>
+    <rect x="14" y="14" width="28" height="4" fill="#5eead4"/>
+    <rect x="14" y="26" width="20" height="4" fill="#5eead4"/>
+    <rect x="14" y="38" width="24" height="4" fill="#5eead4"/>
+
+    <!-- Block B (destination / telegram) -->
+    <rect x="104" y="104" width="56" height="56" fill="#14b8a6"/>
+    <rect x="118" y="118" width="28" height="4" fill="#042f2e"/>
+    <rect x="118" y="130" width="20" height="4" fill="#042f2e"/>
+    <rect x="118" y="142" width="24" height="4" fill="#042f2e"/>
+
+    <!-- Top connector: A → B (right-angle path) -->
+    <polyline points="56,20 82,20 82,132 104,132"
+              fill="none" stroke="#2dd4bf" stroke-width="5" stroke-linejoin="miter"/>
+    <polygon points="96,127 104,132 96,137" fill="#2dd4bf"/>
+
+    <!-- Bottom connector: B → A (right-angle path) -->
+    <polyline points="104,148 78,148 78,36 56,36"
+              fill="none" stroke="#0d9488" stroke-width="5" stroke-linejoin="miter"/>
+    <polygon points="64,31 56,36 64,41" fill="#0d9488"/>
+  </g>
+
+  <!-- WORDMARK -->
+  <g transform="translate(240, 0)">
+    <text x="0" y="130" font-family="ui-monospace, 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, monospace"
+          font-weight="800" font-size="84" letter-spacing="-2" fill="#0f766e">unit3d<tspan fill="#14b8a6">gram</tspan></text>
+    <text x="6" y="162" font-family="ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, monospace"
+          font-weight="600" font-size="13" letter-spacing="7" fill="#5eead4">UNIT3D  ·  TELEGRAM  ·  BRIDGE</text>
+  </g>
+</svg>
