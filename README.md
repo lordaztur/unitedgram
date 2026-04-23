@@ -449,41 +449,4 @@ Cobre: parsing de HTML, formatação de mensagens Telegram, extração de replie
 
 ## 📝 Licença
 
-[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright.
-ht.
-
-expiram
-- Token do Telegram tem permissão só pro chat configurado
-
----
-
-## 📝 Licença
-
-[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright.
-
----
-
-<sub>Built with ☕ and way too many refactor cycles.</sub>
-o expiram
-- Token do Telegram tem permissão só pro chat configurado
-
----
-
-## 📝 Licença
-
-[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright.
-
----
-
-<sub>Built with ☕ and way too many refactor cycles.</sub>
-ado
-
----
-
-## 📝 Licença
-
-[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright.
-
----
-
-<sub>Built with ☕ and way too many refactor cycles.</sub>
+[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright. 
