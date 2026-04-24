@@ -423,18 +423,18 @@ Cobre: parsing de HTML, formatação de mensagens Telegram, extração de replie
 
 ```
 ┌────────────┐   WebSocket (wss://host:8443)   ┌──────────────┐
-│   site     │ ◀──── eventos em tempo real ──▶ │              │
-│  UNIT3D    │                                  │              │
-│            │   HTTP (site REST API)          │              │
-│            │ ◀────── fallback + send ───────▶│  unitedgram  │
-└────────────┘                                  │    (bot)     │
-                                                │              │
-                                                │              │
-                                                │              │
-┌────────────┐       Bot API (polling)          │              │
-│  Telegram  │ ◀───── send/receive ────────────▶│              │
-│  (chat)    │                                  │              │
-└────────────┘                                  └──────────────┘
+│   site     │ ◀── eventos em tempo real ───▶│              │
+│  UNIT3D    │                                 │              │
+│            │       HTTP (site REST API)      │              │
+│            │ ◀───── fallback + send ──────▶│  unitedgram  │
+└────────────┘                                 │    (bot)     │
+                                               │              │
+                                               │              │
+                                               │              │
+┌────────────┐          Bot API (polling)      │              │
+│  Telegram  │ ◀──────── send/receive ──────▶│              │
+│  (chat)    │                                 │              │
+└────────────┘                                 └──────────────┘
 ```
 
 **6 módulos:**
