@@ -47,6 +47,7 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um gr
 
 ## 📋 Pré-requisitos
 
+- � **Docker instalado** — necessário para rodar via container
 - 🐍 **Python 3.11+**
 - 🖥️ **Um computador que possa, de preferência, ficar ligado direto** (pra manter o chat funcionando)
 - 🤖 **Token de bot do Telegram** ([@BotFather](https://t.me/BotFather))
@@ -56,6 +57,8 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um gr
 ---
 
 ## 🚀 Instalação
+
+> Se você for usar Docker, execute apenas os passos 1 e 2. Os passos 3, 4 e 5 são desnecessários para uso em Docker.
 
 ### 1. Clone e crie o venv
 
@@ -381,6 +384,28 @@ nssm remove unitedgram confirm     # desinstalar
 
 > 💡 **Nota sobre permissões do `.env`**: o `chmod 600` do passo 2 é específico de Unix. No Windows, a proteção já vem do NTFS herdando a permissão do seu usuário — se quiser travar explicitamente, use `icacls .env /inheritance:r /grant:r "%USERNAME%:F"`.
 
+
+
+## 🐳 Usando com Docker
+
+### Rodar o container usando docker compose:
+
+O repositório já inclui um `Dockerfile` e um `docker-compose.yml`.
+
+```bash
+docker compose up -d
+```
+
+Para ver os logs em tempo real:
+
+```bash
+docker compose logs -f
+```
+Para parar o serviço:
+
+```bash
+docker compose down
+```
 ---
 
 ## 🎮 Comandos no Telegram

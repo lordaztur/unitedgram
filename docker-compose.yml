@@ -1,0 +1,10 @@
+services:
+  unitedgram:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unitedgram
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "main.py"]
