@@ -11,7 +11,7 @@ from telegram import (
     InputMediaPhoto,
     LinkPreviewOptions,
 )
-from telegram.error import BadRequest, RetryAfter
+from telegram.error import BadRequest, NetworkError, RetryAfter
 from telegram.ext import Application
 
 from bridge import clean_html
@@ -32,6 +32,10 @@ __all__ = [
 ]
 
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
+# Espera (s) entre tentativas de entrega no Telegram em caso de erro de rede/timeout.
+# São 4 tentativas no total: a primeira + uma por valor desta tupla.
+_NET_RETRY_BACKOFFS = (3, 7, 15)
 
 
 def _extract_payload(args):
@@ -104,27 +108,46 @@ async def deliver_message(app: Application, m: dict):
         images = [b for b in downloads if b]
 
     sent_msg = None
-    for attempt in range(3):
+    transient_failure = False
+    for attempt in range(len(_NET_RETRY_BACKOFFS) + 1):
         try:
             sent_msg = await _send_to_telegram(app, bridge, images, text_out, reply_markup)
             break
         except RetryAfter as e:
+            transient_failure = True
             logger.info(f"deliver_message {site_id}: RetryAfter {e.retry_after}s (tentativa {attempt+1})")
             await asyncio.sleep(int(e.retry_after) + 2)
-            continue
         except BadRequest as e:
+            # BadRequest é subclasse de NetworkError no PTB — precisa vir ANTES dele.
+            transient_failure = False
             logger.warning(f"deliver_message {site_id}: BadRequest, fallback texto: {e}")
             try:
                 sent_msg = await _send_fallback_text(app, bridge, raw_html)
             except Exception as inner:
                 logger.error(f"deliver_message {site_id}: fallback falhou: {inner}")
             break
+        except NetworkError as e:
+            transient_failure = True
+            if attempt >= len(_NET_RETRY_BACKOFFS):
+                logger.error(f"deliver_message {site_id}: erro de rede após {attempt+1} tentativas: {e}")
+                break
+            wait = _NET_RETRY_BACKOFFS[attempt]
+            logger.warning(f"deliver_message {site_id}: erro de rede ({e}); retry em {wait}s (tentativa {attempt+1})")
+            await asyncio.sleep(wait)
         except Exception as e:
+            transient_failure = False
             logger.error(f"Erro enviando msg {site_id} p/ Telegram: {e}")
             break
 
     if sent_msg:
         bridge._cache_message(sent_msg.message_id, m)
+    elif transient_failure:
+        # Não entregou por erro transitório (rede/rate-limit). Libera o ID do dedup
+        # pra que um reconcile via HTTP (no próximo (re)connect do WS) possa recuperá-la.
+        bridge.queued_ids.pop(site_id, None)
+        logger.error(f"deliver_message {site_id}: não entregue (erro transitório) — ID liberado p/ reconcile")
+    else:
+        logger.error(f"deliver_message {site_id}: não entregue (erro permanente) — descartada")
 
 
 async def message_worker(app: Application):
