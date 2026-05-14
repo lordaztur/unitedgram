@@ -244,6 +244,46 @@ class TestDeliverMessage:
         finally:
             await bridge.close()
 
+    async def test_gif_via_wsrv_proxy_routed_to_animation(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=58)])
+        m = self._msg(320813)
+        proxy_url = (
+            "https://wsrv.nl/?n=-1&ll&url=https%3A%2F%2Fmedia4.giphy.com"
+            "%2Fmedia%2Fv1.abc%2FIcGkqdUmYLFGE%2Fgiphy.gif"
+        )
+        m["message"] = f'<img src="{proxy_url}">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.animation_args == [proxy_url]
+            assert bot.photo_args == []
+        finally:
+            await bridge.close()
+
+    async def test_gifts_url_not_treated_as_gif(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=59)])
+        m = self._msg(320814)
+        m["message"] = '<img src="https://shop.com/.gifts/promo.png">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.photo_args == ["https://shop.com/.gifts/promo.png"]
+            assert bot.animation_args == []
+        finally:
+            await bridge.close()
+
     async def test_png_url_still_routed_to_send_photo(self):
         bridge = _bridge_returning([])
 

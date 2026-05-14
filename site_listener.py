@@ -1,8 +1,10 @@
 import asyncio
 import html
 import logging
+import re
 import time
 import uuid
+from urllib.parse import unquote
 
 import socketio
 from telegram import (
@@ -43,12 +45,16 @@ def _extract_payload(args):
     return None
 
 
+# Pega .gif tanto no path quanto em URL embedada em query (ex.: wsrv.nl/?url=...giphy.gif).
+# A âncora à direita evita falso-positivo em ".gifts/", ".gifford" etc.
+_RE_GIF_IN_URL = re.compile(r'\.gif(?:[?&#/=]|$)', re.IGNORECASE)
+
+
 def _is_gif(item) -> bool:
     if isinstance(item, (bytes, bytearray)):
         return bytes(item[:4]) == b"GIF8"
     if isinstance(item, str):
-        path = item.split("?", 1)[0].split("#", 1)[0].lower()
-        return path.endswith(".gif")
+        return bool(_RE_GIF_IN_URL.search(unquote(item)))
     return False
 
 
