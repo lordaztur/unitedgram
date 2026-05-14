@@ -22,13 +22,10 @@ class FakeSentMessage:
 
 
 class FakeBot:
-    """Bot stub whose send_message replays a scripted list of outcomes.
-
-    Each entry is either an Exception (raised) or a value (returned)."""
-
     def __init__(self, script):
         self._script = list(script)
         self.calls = 0
+        self.photo_args = []
 
     async def send_message(self, **kwargs):
         self.calls += 1
@@ -37,11 +34,20 @@ class FakeBot:
             raise outcome
         return outcome
 
-    async def send_photo(self, **kwargs):  # not used by these tests
-        return FakeSentMessage()
+    async def send_photo(self, **kwargs):
+        self.calls += 1
+        self.photo_args.append(kwargs.get("photo"))
+        outcome = self._script.pop(0) if self._script else FakeSentMessage()
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
-    async def send_media_group(self, **kwargs):  # not used by these tests
-        return [FakeSentMessage()]
+    async def send_media_group(self, **kwargs):
+        self.calls += 1
+        outcome = self._script.pop(0) if self._script else FakeSentMessage()
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return [outcome]
 
 
 def _bridge_returning(messages):
@@ -101,7 +107,6 @@ class TestInitialBackfill:
 class TestDeliverMessage:
     @pytest.fixture(autouse=True)
     def _fast_retries(self, monkeypatch):
-        # Sem esperas reais entre tentativas de entrega.
         monkeypatch.setattr(site_listener, "_NET_RETRY_BACKOFFS", (0, 0, 0))
 
     def _msg(self, mid=320789):
@@ -115,37 +120,94 @@ class TestDeliverMessage:
         try:
             bridge.enqueue_message(m)
             await deliver_message(FakeApp(bridge, bot), m)
-            assert bot.calls == 3                       # 2 falhas + 1 sucesso
-            assert 42 in bridge.msg_map                 # foi cacheada => entregue
+            assert bot.calls == 3
+            assert 42 in bridge.msg_map
             assert bridge.msg_map[42]["site_id"] == 320789
-            assert 320789 in bridge.queued_ids          # continua marcada (não duplica)
+            assert 320789 in bridge.queued_ids
         finally:
             await bridge.close()
 
     async def test_persistent_timeout_releases_id_for_reconcile(self):
         bridge = _bridge_returning([])
-        bot = FakeBot([TimedOut()] * 6)                 # nunca entrega
+        bot = FakeBot([TimedOut()] * 6)
         m = self._msg(320796)
         try:
             bridge.enqueue_message(m)
             assert 320796 in bridge.queued_ids
             await deliver_message(FakeApp(bridge, bot), m)
-            assert bot.calls == 4                        # 4 tentativas (1 + 3 retries)
-            assert not bridge.msg_map                    # nada cacheado => não entregue
-            assert 320796 not in bridge.queued_ids       # ID liberado p/ reconcile
+            assert bot.calls == 4
+            assert not bridge.msg_map
+            assert 320796 not in bridge.queued_ids
+        finally:
+            await bridge.close()
+
+    async def test_external_url_passed_directly_no_download(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado para URL externa: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=77)])
+        m = self._msg(320801)
+        m["message"] = 'olha <img src="https://i.imgur.com/PdJtDFc.png"> ai'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.photo_args == ["https://i.imgur.com/PdJtDFc.png"]
+            assert 77 in bridge.msg_map
+        finally:
+            await bridge.close()
+
+    async def test_internal_url_downloaded_as_bytes(self):
+        bridge = _bridge_returning([])
+        downloaded = []
+
+        async def fake_download(url):
+            downloaded.append(url)
+            return b"BYTES"
+        bridge.download_image = fake_download
+
+        bot = FakeBot([FakeSentMessage(message_id=88)])
+        m = self._msg(320802)
+        m["message"] = f'<img src="{bridge.base_url}/uploads/x.png">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert downloaded == [f"{bridge.base_url}/uploads/x.png"]
+            assert bot.photo_args == [b"BYTES"]
+            assert 88 in bridge.msg_map
+        finally:
+            await bridge.close()
+
+    async def test_internal_url_download_fail_falls_back_to_url(self):
+        bridge = _bridge_returning([])
+
+        async def fake_download(url):
+            return None
+        bridge.download_image = fake_download
+
+        bot = FakeBot([FakeSentMessage(message_id=99)])
+        m = self._msg(320803)
+        internal_url = f"{bridge.base_url}/uploads/y.png"
+        m["message"] = f'<img src="{internal_url}">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.photo_args == [internal_url]
+            assert 99 in bridge.msg_map
         finally:
             await bridge.close()
 
     async def test_bad_request_with_failing_fallback_keeps_id(self):
         bridge = _bridge_returning([])
-        # 1ª chamada: BadRequest no envio normal; 2ª: BadRequest no fallback de texto.
         bot = FakeBot([BadRequest("can't parse entities"), BadRequest("still bad")])
         m = self._msg(320700)
         try:
             bridge.enqueue_message(m)
             await deliver_message(FakeApp(bridge, bot), m)
-            assert bot.calls == 2                        # envio + fallback, sem retries
-            assert not bridge.msg_map                    # não entregue
-            assert 320700 in bridge.queued_ids           # erro permanente: ID NÃO é liberado
+            assert bot.calls == 2
+            assert not bridge.msg_map
+            assert 320700 in bridge.queued_ids
         finally:
             await bridge.close()

@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+import bridge as bridge_mod
 from bridge import ChatBridge
 
 
@@ -110,6 +111,61 @@ class TestSendAndDelete:
         bridge = _make_bridge_with_mock(lambda req: httpx.Response(403))
         try:
             assert await bridge.delete_message(42) is False
+        finally:
+            await bridge.close()
+
+
+class TestDownloadImage:
+    @pytest.fixture(autouse=True)
+    def _fast_backoff(self, monkeypatch):
+        monkeypatch.setattr(bridge_mod, "_IMG_429_BACKOFFS", (0, 0))
+
+    def _bridge_with_upload_mock(self, handler):
+        bridge = ChatBridge.from_env()
+        bridge.upload_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        return bridge
+
+    async def test_429_then_success(self):
+        calls = []
+
+        def handler(req):
+            calls.append(req.url.path)
+            if len(calls) < 3:
+                return httpx.Response(429)
+            return httpx.Response(200, content=b"PNGDATA")
+        bridge = self._bridge_with_upload_mock(handler)
+        try:
+            data = await bridge.download_image("https://i.imgur.com/abc.png")
+            assert data == b"PNGDATA"
+            assert len(calls) == 3
+        finally:
+            await bridge.close()
+
+    async def test_429_persistent_returns_none(self):
+        calls = []
+
+        def handler(req):
+            calls.append(req.url.path)
+            return httpx.Response(429)
+        bridge = self._bridge_with_upload_mock(handler)
+        try:
+            data = await bridge.download_image("https://i.imgur.com/abc.png")
+            assert data is None
+            assert len(calls) == 3
+        finally:
+            await bridge.close()
+
+    async def test_404_does_not_retry(self):
+        calls = []
+
+        def handler(req):
+            calls.append(req.url.path)
+            return httpx.Response(404)
+        bridge = self._bridge_with_upload_mock(handler)
+        try:
+            data = await bridge.download_image("https://i.imgur.com/abc.png")
+            assert data is None
+            assert len(calls) == 1
         finally:
             await bridge.close()
 

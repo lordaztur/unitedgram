@@ -5,6 +5,7 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -26,6 +27,8 @@ REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
                 "USER_ID", "CSRF_TOKEN", "COOKIE")
 
 HTML_PARSER = "lxml"
+
+_IMG_429_BACKOFFS = (1, 3)
 
 _RE_QUOTE_QUOTING = re.compile(
     r'^[“" ]*(?:Quoting|Citando)\s*@?([^\n:]+)(?::|\r?\n)\s*(.*)',
@@ -311,20 +314,32 @@ class ChatBridge:
                 urls.append(src)
         return urls
 
-    async def download_image(self, url: str) -> Optional[bytes]:
-        client = self.upload_client if url.startswith("http") else self.client
+    def is_internal_image(self, url: str) -> bool:
         try:
-            async with client.stream("GET", url) as response:
-                if response.status_code != 200:
-                    logger.warning(f"download_image {url}: HTTP {response.status_code}")
-                    return None
-                chunks = bytearray()
-                async for chunk in response.aiter_bytes():
-                    chunks.extend(chunk)
-                return bytes(chunks)
-        except Exception as e:
-            _log_http_failure(f"download_image {url}", e)
-            return None
+            return urlparse(url).netloc == urlparse(self.base_url).netloc
+        except Exception:
+            return False
+
+    async def download_image(self, url: str) -> Optional[bytes]:
+        client = self.client if self.is_internal_image(url) else self.upload_client
+        for attempt in range(len(_IMG_429_BACKOFFS) + 1):
+            try:
+                async with client.stream("GET", url) as response:
+                    if response.status_code == 200:
+                        chunks = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            chunks.extend(chunk)
+                        return bytes(chunks)
+                    if response.status_code != 429 or attempt >= len(_IMG_429_BACKOFFS):
+                        logger.warning(f"download_image {url}: HTTP {response.status_code}")
+                        return None
+            except Exception as e:
+                _log_http_failure(f"download_image {url}", e)
+                return None
+            wait = _IMG_429_BACKOFFS[attempt]
+            logger.warning(f"download_image {url}: HTTP 429; retry em {wait}s (tentativa {attempt+1})")
+            await asyncio.sleep(wait)
+        return None
 
     async def upload_to_imgbb(self, image_data) -> str:
         if not self.imgbb_key:

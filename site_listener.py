@@ -33,8 +33,6 @@ __all__ = [
 
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
-# Espera (s) entre tentativas de entrega no Telegram em caso de erro de rede/timeout.
-# São 4 tentativas no total: a primeira + uma por valor desta tupla.
 _NET_RETRY_BACKOFFS = (3, 7, 15)
 
 
@@ -102,10 +100,16 @@ async def deliver_message(app: Application, m: dict):
         keyboard = [[InlineKeyboardButton("🗑️ Deletar", callback_data=f"del_{site_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-    images: list[bytes] = []
+    images: list = []
     if img_urls:
-        downloads = await asyncio.gather(*[bridge.download_image(u) for u in img_urls])
-        images = [b for b in downloads if b]
+        async def _resolve(url: str):
+            if bridge.is_internal_image(url):
+                data = await bridge.download_image(url)
+                if data is not None:
+                    return data
+                logger.warning(f"deliver_message {site_id}: download interno falhou; tentando URL direta {url}")
+            return url
+        images = list(await asyncio.gather(*[_resolve(u) for u in img_urls]))
 
     sent_msg = None
     transient_failure = False
@@ -142,8 +146,7 @@ async def deliver_message(app: Application, m: dict):
     if sent_msg:
         bridge._cache_message(sent_msg.message_id, m)
     elif transient_failure:
-        # Não entregou por erro transitório (rede/rate-limit). Libera o ID do dedup
-        # pra que um reconcile via HTTP (no próximo (re)connect do WS) possa recuperá-la.
+        # Libera o ID do dedup pra um reconcile via HTTP poder recuperar a msg.
         bridge.queued_ids.pop(site_id, None)
         logger.error(f"deliver_message {site_id}: não entregue (erro transitório) — ID liberado p/ reconcile")
     else:
