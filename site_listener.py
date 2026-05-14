@@ -43,6 +43,15 @@ def _extract_payload(args):
     return None
 
 
+def _is_gif(item) -> bool:
+    if isinstance(item, (bytes, bytearray)):
+        return bytes(item[:4]) == b"GIF8"
+    if isinstance(item, str):
+        path = item.split("?", 1)[0].split("#", 1)[0].lower()
+        return path.endswith(".gif")
+    return False
+
+
 async def _send_to_telegram(app: Application, bridge, images, text_out, reply_markup):
     if len(images) > 1:
         media_group = [
@@ -56,6 +65,15 @@ async def _send_to_telegram(app: Application, bridge, images, text_out, reply_ma
         )
         return msgs[0]
     if len(images) == 1:
+        if _is_gif(images[0]):
+            return await app.bot.send_animation(
+                chat_id=bridge.tg_chat_id,
+                message_thread_id=bridge.tg_topic_id,
+                animation=images[0],
+                caption=text_out[:1024],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
         return await app.bot.send_photo(
             chat_id=bridge.tg_chat_id,
             message_thread_id=bridge.tg_topic_id,

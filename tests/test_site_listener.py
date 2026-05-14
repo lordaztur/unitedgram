@@ -26,6 +26,7 @@ class FakeBot:
         self._script = list(script)
         self.calls = 0
         self.photo_args = []
+        self.animation_args = []
 
     async def send_message(self, **kwargs):
         self.calls += 1
@@ -37,6 +38,14 @@ class FakeBot:
     async def send_photo(self, **kwargs):
         self.calls += 1
         self.photo_args.append(kwargs.get("photo"))
+        outcome = self._script.pop(0) if self._script else FakeSentMessage()
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    async def send_animation(self, **kwargs):
+        self.calls += 1
+        self.animation_args.append(kwargs.get("animation"))
         outcome = self._script.pop(0) if self._script else FakeSentMessage()
         if isinstance(outcome, BaseException):
             raise outcome
@@ -196,6 +205,60 @@ class TestDeliverMessage:
             await deliver_message(FakeApp(bridge, bot), m)
             assert bot.photo_args == [internal_url]
             assert 99 in bridge.msg_map
+        finally:
+            await bridge.close()
+
+    async def test_gif_url_routed_to_send_animation(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=55)])
+        m = self._msg(320810)
+        m["message"] = 'reacao <img src="https://tenor.com/foo.gif">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.animation_args == ["https://tenor.com/foo.gif"]
+            assert bot.photo_args == []
+            assert 55 in bridge.msg_map
+        finally:
+            await bridge.close()
+
+    async def test_gif_url_with_query_string_routed_to_animation(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=56)])
+        m = self._msg(320811)
+        m["message"] = '<img src="https://x.com/a.GIF?token=abc&v=1">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.animation_args == ["https://x.com/a.GIF?token=abc&v=1"]
+        finally:
+            await bridge.close()
+
+    async def test_png_url_still_routed_to_send_photo(self):
+        bridge = _bridge_returning([])
+
+        async def explode(url):
+            raise AssertionError(f"download_image não deve ser chamado: {url}")
+        bridge.download_image = explode
+
+        bot = FakeBot([FakeSentMessage(message_id=57)])
+        m = self._msg(320812)
+        m["message"] = '<img src="https://i.imgur.com/a.png">'
+        try:
+            bridge.enqueue_message(m)
+            await deliver_message(FakeApp(bridge, bot), m)
+            assert bot.photo_args == ["https://i.imgur.com/a.png"]
+            assert bot.animation_args == []
         finally:
             await bridge.close()
 
