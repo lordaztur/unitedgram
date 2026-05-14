@@ -170,6 +170,22 @@ class TestDownloadImage:
             await bridge.close()
 
 
+class TestExtractImageUrls:
+    async def test_skips_joypixels_emoji(self):
+        bridge = ChatBridge.from_env()
+        try:
+            html = (
+                '<img src="https://i.imgur.com/x.png">'
+                '<img class="joypixels" alt="\U0001f44d" '
+                'src="https://capybarabr.com/vendor/joypixels/png/64/1f44d.png">'
+                '<img src="https://x.com/y.jpg">'
+            )
+            urls = bridge._extract_all_image_urls(html)
+            assert urls == ["https://i.imgur.com/x.png", "https://x.com/y.jpg"]
+        finally:
+            await bridge.close()
+
+
 class TestEnqueueViaQueue:
     async def test_enqueue_puts_on_queue(self):
         bridge = ChatBridge.from_env()

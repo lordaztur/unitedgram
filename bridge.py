@@ -96,6 +96,12 @@ def _is_nested_in_quote(node) -> bool:
     return False
 
 
+def _inline_joypixels(soup) -> None:
+    for img in soup.find_all('img', class_='joypixels'):
+        alt = img.get('alt') or ''
+        img.replace_with(alt)
+
+
 def _find_quote_nodes(soup) -> list:
     nodes = list(soup.find_all(['blockquote', 'q']))
     for div in soup.find_all('div'):
@@ -173,6 +179,7 @@ def clean_html(raw_html: str) -> str:
     if not raw_html:
         return ""
     soup = BeautifulSoup(raw_html, HTML_PARSER)
+    _inline_joypixels(soup)
     quote_nodes = _find_quote_nodes(soup)
     _strip_nested_quote_nodes(quote_nodes)
     _replace_quote_nodes_with_bbcode(quote_nodes)
@@ -305,6 +312,8 @@ class ChatBridge:
         soup = BeautifulSoup(raw_html, HTML_PARSER)
         urls = []
         for img in soup.find_all('img'):
+            if 'joypixels' in (img.get('class') or []):
+                continue
             src = img.get('src')
             if src:
                 if not src.startswith("http"):

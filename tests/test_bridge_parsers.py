@@ -15,6 +15,19 @@ class TestCleanHtml:
         assert "olá" not in out
         assert "texto" in out
 
+    def test_inlines_joypixels_emoji(self):
+        html = (
+            'olha aqui '
+            '<img class="joypixels" alt="&#x1f44d;" title=":thumbsup:" '
+            'src="https://capybarabr.com/vendor/joypixels/png/64/1f44d.png"/>'
+            ' show'
+        )
+        out = clean_html(html)
+        assert "\U0001f44d" in out
+        assert "olha aqui" in out and "show" in out
+        assert "img" not in out.lower()
+        assert "joypixels" not in out
+
     def test_br_becomes_newline(self):
         out = clean_html("linha1<br>linha2<br>linha3")
         assert "linha1" in out and "linha2" in out and "linha3" in out
