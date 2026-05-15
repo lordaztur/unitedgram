@@ -41,6 +41,8 @@ dist/
 *.log
 *.log.*
 temp_*.jpg
+avatar_cache.json
+avatar_cache.json.tmp
 
 # --- backups e temporários ---
 *.bak

@@ -1,9 +1,13 @@
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import re
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -29,6 +33,8 @@ REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
 HTML_PARSER = "lxml"
 
 _IMG_429_BACKOFFS = (1, 3)
+
+AVATAR_CACHE_PATH = Path(__file__).parent / "avatar_cache.json"
 
 _RE_QUOTE_QUOTING = re.compile(
     r'^[“" ]*(?:Quoting|Citando)\s*@?([^\n:]+)(?::|\r?\n)\s*(.*)',
@@ -293,6 +299,8 @@ class ChatBridge:
         self.queued_limit = settings.queued_dedup_limit
         self.ws_connected = asyncio.Event()
 
+        self.avatar_cache: Dict[int, Dict[str, Any]] = self._load_avatar_cache()
+
     @classmethod
     def from_env(cls) -> "ChatBridge":
         return cls(BridgeConfig.from_env())
@@ -368,6 +376,86 @@ class ChatBridge:
         except Exception as e:
             _log_http_failure("upload_to_imgbb", e)
             return ""
+
+    def _load_avatar_cache(self) -> Dict[int, Dict[str, Any]]:
+        try:
+            with open(AVATAR_CACHE_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+            result: Dict[int, Dict[str, Any]] = {}
+            for k, v in raw.items():
+                uid = int(k)
+                if isinstance(v, str):
+                    # Migra formato antigo (só URL) → força revalidação no próximo acesso.
+                    result[uid] = {"hash": "", "url": v, "ts": 0.0}
+                elif isinstance(v, dict) and "url" in v:
+                    result[uid] = {
+                        "hash": str(v.get("hash", "")),
+                        "url": str(v["url"]),
+                        "ts": float(v.get("ts", 0.0)),
+                    }
+            return result
+        except FileNotFoundError:
+            return {}
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.warning(f"avatar_cache: corrompido ({e}); começando vazio")
+            return {}
+
+    def _save_avatar_cache(self) -> None:
+        tmp = AVATAR_CACHE_PATH.with_suffix(".json.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({str(k): v for k, v in self.avatar_cache.items()}, f)
+            tmp.replace(AVATAR_CACHE_PATH)
+        except OSError as e:
+            logger.warning(f"avatar_cache: falha ao salvar: {e}")
+
+    async def get_avatar_url(self, user: dict) -> Optional[str]:
+        if not user or not settings.show_user_avatars:
+            return None
+        try:
+            user_id = int(user.get("id", 0))
+        except (TypeError, ValueError):
+            return None
+        username = user.get("username") or user.get("name")
+        if not user_id or not username:
+            return None
+
+        if user.get("image"):
+            src = f"{self.base_url}/authenticated-images/user-avatars/{username}"
+            cache_key = user_id
+            label = username
+        else:
+            src = f"{self.base_url}/img/profile.png"
+            cache_key = 0
+            label = "default"
+
+        if not self.imgbb_key:
+            return src if cache_key == 0 else None
+
+        now = time.time()
+        cached = self.avatar_cache.get(cache_key)
+        if cached and (now - cached.get("ts", 0.0)) < settings.avatar_revalidate_seconds:
+            return cached["url"]
+
+        data = await self.download_image(src)
+        if not data:
+            return cached["url"] if cached else (src if cache_key == 0 else None)
+
+        new_hash = hashlib.sha1(data).hexdigest()
+        if cached and cached.get("hash") == new_hash:
+            cached["ts"] = now
+            self._save_avatar_cache()
+            return cached["url"]
+
+        public_url = await self.upload_to_imgbb(data)
+        if not public_url:
+            return cached["url"] if cached else (src if cache_key == 0 else None)
+
+        self.avatar_cache[cache_key] = {"hash": new_hash, "url": public_url, "ts": now}
+        self._save_avatar_cache()
+        action = "atualizado" if cached else "cacheado"
+        logger.info(f"avatar {action} p/ {label} (key={cache_key}): {public_url}")
+        return public_url
 
     async def process_media_group_delayed(self, gid: str, bot):
         await asyncio.sleep(settings.album_wait_seconds)

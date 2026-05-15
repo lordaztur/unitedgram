@@ -58,7 +58,7 @@ def _is_gif(item) -> bool:
     return False
 
 
-async def _send_to_telegram(app: Application, bridge, images, text_out, reply_markup):
+async def _send_to_telegram(app: Application, bridge, images, text_out, reply_markup, avatar_url=None):
     if len(images) > 1:
         media_group = [
             InputMediaPhoto(img, caption=text_out[:1024] if i == 0 else "", parse_mode="HTML")
@@ -88,12 +88,16 @@ async def _send_to_telegram(app: Application, bridge, images, text_out, reply_ma
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
+    preview = (
+        LinkPreviewOptions(url=avatar_url, prefer_small_media=True)
+        if avatar_url else NO_PREVIEW
+    )
     return await app.bot.send_message(
         chat_id=bridge.tg_chat_id,
         message_thread_id=bridge.tg_topic_id,
         text=text_out,
         parse_mode="HTML",
-        link_preview_options=NO_PREVIEW,
+        link_preview_options=preview,
         reply_markup=reply_markup,
     )
 
@@ -135,11 +139,13 @@ async def deliver_message(app: Application, m: dict):
             return url
         images = list(await asyncio.gather(*[_resolve(u) for u in img_urls]))
 
+    avatar_url = None if images else await bridge.get_avatar_url(user_data)
+
     sent_msg = None
     transient_failure = False
     for attempt in range(len(_NET_RETRY_BACKOFFS) + 1):
         try:
-            sent_msg = await _send_to_telegram(app, bridge, images, text_out, reply_markup)
+            sent_msg = await _send_to_telegram(app, bridge, images, text_out, reply_markup, avatar_url)
             break
         except RetryAfter as e:
             transient_failure = True

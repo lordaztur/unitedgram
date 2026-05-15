@@ -28,6 +28,8 @@ settings = SimpleNamespace(
     show_delete_button=True,
     tag_aliases=True,
     mirror_deletions=False,
+    show_user_avatars=True,
+    avatar_revalidate_seconds=1800,
 )
 
 _initialized = False
@@ -80,4 +82,6 @@ def setup() -> None:
     settings.show_delete_button = _envbool("SHOW_DELETE_BUTTON", True)
     settings.tag_aliases = _envbool("TAG_ALIASES", True)
     settings.mirror_deletions = _envbool("MIRROR_DELETIONS", False)
+    settings.show_user_avatars = _envbool("SHOW_USER_AVATARS", True)
+    settings.avatar_revalidate_seconds = _envint("AVATAR_REVALIDATE_SECONDS", 1800)
     _initialized = True

@@ -7,4 +7,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - ./avatar_cache.json:/app/avatar_cache.json
     command: ["python", "main.py"]
