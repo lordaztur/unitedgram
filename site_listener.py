@@ -197,7 +197,20 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     clean_text = clean_html(m.get("message") or "")
                     description = format_discord_body(bridge, clean_text)
 
-                    embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=0xFE0203 if m.get("type") == "notification" else 0x5865F2)
+                    # Extração da cor do usuário (do grupo ou status)
+                    user_color = 0x5865F2  # Azul padrão
+                    if m.get("type") == "notification":
+                        user_color = 0xFE0203
+                    else:
+                        group_data = user_data.get("group") or {}
+                        hex_color = group_data.get("color") or (user_data.get("chat_status") or {}).get("color")
+                        if hex_color and hex_color.startswith("#"):
+                            try:
+                                user_color = int(hex_color.lstrip("#"), 16)
+                            except ValueError:
+                                pass
+
+                    embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=user_color)
 
                     # Footer com a data da mensagem (apenas o horário)
                     msg_date = m.get("created_at") or m.get("date") or time.strftime("%H:%M:%S")
