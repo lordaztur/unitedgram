@@ -9,6 +9,7 @@ cookies.txt
 *.txt
 credentials.json
 secrets.json
+avatars/*.png
 
 # --- virtualenv ---
 venv/

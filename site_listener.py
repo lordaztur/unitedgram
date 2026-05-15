@@ -1,11 +1,13 @@
 import asyncio
 import html
+import io
 import logging
 import re
 import time
 import uuid
 from urllib.parse import unquote
 
+import discord
 import socketio
 from telegram import (
     InlineKeyboardButton,
@@ -18,7 +20,7 @@ from telegram.ext import Application
 
 from bridge import clean_html
 from config import settings
-from formatting import format_telegram_message
+from formatting import format_discord_message, format_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,8 @@ def _is_gif(item) -> bool:
 
 
 async def _send_to_telegram(app: Application, bridge, images, text_out, reply_markup, avatar_url=None):
+    if not app:
+        return None
     if len(images) > 1:
         media_group = [
             InputMediaPhoto(img, caption=text_out[:1024] if i == 0 else "", parse_mode="HTML")
@@ -103,6 +107,8 @@ async def _send_to_telegram(app: Application, bridge, images, text_out, reply_ma
 
 
 async def _send_fallback_text(app: Application, bridge, raw_html: str):
+    if not app:
+        return
     return await app.bot.send_message(
         chat_id=bridge.tg_chat_id,
         message_thread_id=bridge.tg_topic_id,
@@ -112,12 +118,13 @@ async def _send_fallback_text(app: Application, bridge, raw_html: str):
     )
 
 
-async def deliver_message(app: Application, m: dict):
-    bridge = app.bot_data['bridge']
+async def deliver_message(bridge, app: Application, discord_bot, m: dict):
     site_id = int(m.get("id", 0))
     raw_html = m.get('message') or ""
     img_urls = bridge._extract_all_image_urls(raw_html)
-    text_out = format_telegram_message(bridge, m)
+
+    text_tg = format_telegram_message(bridge, m) if settings.enable_telegram else ""
+    text_ds = format_discord_message(bridge, m) if settings.enable_discord else ""
 
     user_data = m.get("user") or {}
     m_username = user_data.get("username") or user_data.get("name") or ""
@@ -141,41 +148,81 @@ async def deliver_message(app: Application, m: dict):
 
     avatar_url = None if images else await bridge.get_avatar_url(user_data)
 
-    sent_msg = None
+    sent_msg_tg = None
     transient_failure = False
-    for attempt in range(len(_NET_RETRY_BACKOFFS) + 1):
-        try:
-            sent_msg = await _send_to_telegram(app, bridge, images, text_out, reply_markup, avatar_url)
-            break
-        except RetryAfter as e:
-            transient_failure = True
-            logger.info(f"deliver_message {site_id}: RetryAfter {e.retry_after}s (tentativa {attempt+1})")
-            await asyncio.sleep(int(e.retry_after) + 2)
-        except BadRequest as e:
-            # BadRequest é subclasse de NetworkError no PTB — precisa vir ANTES dele.
-            transient_failure = False
-            logger.warning(f"deliver_message {site_id}: BadRequest, fallback texto: {e}")
-            try:
-                sent_msg = await _send_fallback_text(app, bridge, raw_html)
-            except Exception as inner:
-                logger.error(f"deliver_message {site_id}: fallback falhou: {inner}")
-            break
-        except NetworkError as e:
-            transient_failure = True
-            if attempt >= len(_NET_RETRY_BACKOFFS):
-                logger.error(f"deliver_message {site_id}: erro de rede após {attempt+1} tentativas: {e}")
-                break
-            wait = _NET_RETRY_BACKOFFS[attempt]
-            logger.warning(f"deliver_message {site_id}: erro de rede ({e}); retry em {wait}s (tentativa {attempt+1})")
-            await asyncio.sleep(wait)
-        except Exception as e:
-            transient_failure = False
-            logger.error(f"Erro enviando msg {site_id} p/ Telegram: {e}")
-            break
 
-    if sent_msg:
-        bridge._cache_message(sent_msg.message_id, m)
-    elif transient_failure:
+    # Entrega Telegram
+    if settings.enable_telegram and app and text_tg:
+        for attempt in range(len(_NET_RETRY_BACKOFFS) + 1):
+            try:
+                sent_msg_tg = await _send_to_telegram(app, bridge, images, text_tg, reply_markup, avatar_url)
+                break
+            except RetryAfter as e:
+                transient_failure = True
+                logger.info(f"deliver_message {site_id} (TG): RetryAfter {e.retry_after}s (tentativa {attempt + 1})")
+                await asyncio.sleep(int(e.retry_after) + 2)
+            except BadRequest as e:
+                transient_failure = False
+                logger.warning(f"deliver_message {site_id} (TG): BadRequest, fallback texto: {e}")
+                try:
+                    sent_msg_tg = await _send_fallback_text(app, bridge, raw_html)
+                except Exception as inner:
+                    logger.error(f"deliver_message {site_id} (TG): fallback falhou: {inner}")
+                break
+            except NetworkError as e:
+                transient_failure = True
+                if attempt >= len(_NET_RETRY_BACKOFFS):
+                    logger.error(f"deliver_message {site_id} (TG): erro de rede após {attempt + 1} tentativas: {e}")
+                    break
+                wait = _NET_RETRY_BACKOFFS[attempt]
+                logger.warning(f"deliver_message {site_id} (TG): erro de rede ({e}); retry em {wait}s (tentativa {attempt + 1})")
+                await asyncio.sleep(wait)
+            except Exception as e:
+                transient_failure = False
+                logger.error(f"Erro enviando msg {site_id} p/ Telegram: {e}")
+                break
+
+    # Entrega Discord
+    sent_msg_ds_id = None
+    if settings.enable_discord and discord_bot and text_ds:
+        try:
+            channel = discord_bot.get_channel(discord_bot.channel_id)
+            if channel:
+                avatar_bytes = await bridge.get_discord_avatar(user_data)
+                if avatar_bytes:
+                    file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
+
+                    # Estilo solicitado pelo usuário
+                    # Usamos apenas o texto da mensagem na descrição, já que o nome está no autor
+                    clean_text = clean_html(m.get("message") or "")
+
+                    embed = discord.Embed(description=clean_text if clean_text else "(Mensagem vazia)", color=0xFE0203 if m.get("type") == "notification" else 0x5865F2)
+
+                    # Footer com a data da mensagem (apenas o horário)
+                    msg_date = m.get("created_at") or m.get("date") or time.strftime("%H:%M:%S")
+                    if "T" in msg_date:
+                        # Extrai HH:MM:SS de 2026-05-15T17:12:36-03:00
+                        msg_date = msg_date.split("T")[1].split("-")[0].split("+")[0]
+                    embed.set_footer(text=msg_date)
+
+                    # Autor com o nome do usuário e o ícone (avatar)
+                    embed.set_author(name=m_username if m_username else "Sistema", icon_url="attachment://avatar.png")
+
+                    msg_ds = await channel.send(file=file, embed=embed)
+                else:
+                    msg_ds = await channel.send(text_ds)
+                sent_msg_ds_id = msg_ds.id
+        except Exception as e:
+            logger.error(f"Erro enviando msg {site_id} p/ Discord: {e}")
+
+    if sent_msg_tg:
+        bridge._cache_message(sent_msg_tg.message_id, m)
+
+    if sent_msg_ds_id:
+        # Também cacheia o ID do Discord para que replies funcionem lá
+        bridge._cache_message(sent_msg_ds_id, m)
+
+    if not sent_msg_tg and not sent_msg_ds_id and transient_failure:
         # Libera o ID do dedup pra um reconcile via HTTP poder recuperar a msg.
         bridge.queued_ids.pop(site_id, None)
         logger.error(f"deliver_message {site_id}: não entregue (erro transitório) — ID liberado p/ reconcile")
@@ -183,20 +230,18 @@ async def deliver_message(app: Application, m: dict):
         logger.error(f"deliver_message {site_id}: não entregue (erro permanente) — descartada")
 
 
-async def message_worker(app: Application):
-    bridge = app.bot_data['bridge']
+async def message_worker(bridge, app: Application, discord_bot=None):
     while True:
         m = await bridge.msg_queue.get()
         try:
-            await deliver_message(app, m)
+            await deliver_message(bridge, app, discord_bot, m)
         except Exception as e:
             logger.error(f"Worker error: {e}")
         finally:
             bridge.msg_queue.task_done()
 
 
-async def heartbeat(app: Application):
-    bridge = app.bot_data['bridge']
+async def heartbeat(bridge):
     start = time.monotonic()
     while True:
         await asyncio.sleep(settings.heartbeat_interval)
@@ -205,8 +250,7 @@ async def heartbeat(app: Application):
         logger.info(f"💓 uptime={uptime}s queue={qsize} ws={bridge.ws_connected.is_set()}")
 
 
-async def cookie_health_probe(app: Application):
-    bridge = app.bot_data['bridge']
+async def cookie_health_probe(bridge, app: Application):
     alerted = False
     while True:
         await asyncio.sleep(settings.cookie_probe_interval)
@@ -214,6 +258,9 @@ async def cookie_health_probe(app: Application):
         if not success:
             if not alerted:
                 logger.error("🚨 Sessão expirou ou falha ao atualizar cookies. Atualize cookies.txt e CSRF_TOKEN.")
+                if not app:
+                    alerted = True
+                    continue
                 try:
                     await app.bot.send_message(
                         chat_id=bridge.tg_chat_id,
@@ -235,8 +282,7 @@ async def cookie_health_probe(app: Application):
             logger.info("✅ Cookies atualizados e salvos com sucesso")
 
 
-async def initial_backfill(app: Application):
-    bridge = app.bot_data['bridge']
+async def initial_backfill(bridge):
     try:
         initial = await bridge.fetch_messages()
         if not initial:
@@ -261,8 +307,7 @@ async def initial_backfill(app: Application):
         logger.error(f"Erro no backfill inicial: {e}")
 
 
-async def reconcile_via_http(app: Application):
-    bridge = app.bot_data['bridge']
+async def reconcile_via_http(bridge):
     try:
         msgs = await bridge.fetch_messages()
         msgs.sort(key=lambda x: int(x.get("id", 0)))
@@ -276,9 +321,9 @@ async def reconcile_via_http(app: Application):
 
 
 class WsSession:
-    def __init__(self, app: Application):
+    def __init__(self, bridge, app: Application):
         self.app = app
-        self.bridge = app.bot_data['bridge']
+        self.bridge = bridge
         self.sio = socketio.AsyncClient(reconnection=False, logger=False, engineio_logger=False)
         self._register_handlers()
 
@@ -291,7 +336,7 @@ class WsSession:
         async def on_connect():
             logger.info(f"🔌 WS conectado (sid={sio.sid})")
             if await self._subscribe():
-                asyncio.create_task(reconcile_via_http(app))
+                asyncio.create_task(reconcile_via_http(bridge))
 
         @sio.on("disconnect")
         async def on_disconnect():
@@ -328,9 +373,10 @@ class WsSession:
                 logger.debug(f"   msg site id={site_id_int} fora do cache; nada a deletar")
                 return
             try:
-                await app.bot.delete_message(chat_id=bridge.tg_chat_id, message_id=tg_msg_id)
+                if app:
+                    await app.bot.delete_message(chat_id=bridge.tg_chat_id, message_id=tg_msg_id)
+                    logger.info(f"   → Telegram msg {tg_msg_id} deletada (mirror)")
                 bridge.msg_map.pop(tg_msg_id, None)
-                logger.info(f"   → Telegram msg {tg_msg_id} deletada (mirror)")
             except Exception as e:
                 logger.warning(f"   falha ao deletar Telegram msg {tg_msg_id}: {e}")
 
@@ -414,20 +460,19 @@ class WsSession:
             pass
 
 
-async def _safety_reconciler(app: Application):
-    bridge = app.bot_data['bridge']
+async def _safety_reconciler(bridge):
     while True:
         await asyncio.sleep(settings.safety_reconcile_interval)
         if not bridge.ws_connected.is_set():
-            await reconcile_via_http(app)
+            await reconcile_via_http(bridge)
 
 
-async def run_websocket(app: Application):
-    safety_task = asyncio.create_task(_safety_reconciler(app))
+async def run_websocket(bridge, app: Application):
+    safety_task = asyncio.create_task(_safety_reconciler(bridge))
     backoff = settings.ws_backoff_initial
     try:
         while True:
-            session = WsSession(app)
+            session = WsSession(bridge, app)
             try:
                 await session.run()
                 backoff = settings.ws_backoff_initial

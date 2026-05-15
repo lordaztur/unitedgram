@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import http.cookiejar
+import io
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from PIL import Image
 
 from config import settings
 from formatting import build_bbcode_payload
@@ -28,13 +30,15 @@ __all__ = [
     "extract_reply_content",
 ]
 
-REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")
+REQUIRED_ENV = ("BASE_URL", "WS_HOST")
 
 HTML_PARSER = "lxml"
 
 _IMG_429_BACKOFFS = (1, 3)
 
 AVATAR_CACHE_PATH = Path(__file__).parent / "avatar_cache.json"
+LOCAL_AVATAR_DIR = Path(__file__).parent / "avatars"
+LOCAL_AVATAR_DIR.mkdir(exist_ok=True)
 
 _RE_QUOTE_QUOTING = re.compile(
     r'^[“" ]*(?:Quoting|Citando)\s*@?([^\n:]+)(?::|\r?\n)\s*(.*)',
@@ -221,7 +225,7 @@ class BridgeConfig:
     base_url: str
     ws_host: str
     chatroom_id: int
-    tg_chat_id: int
+    tg_chat_id: Optional[int]
     tg_topic_id: Optional[int]
     imgbb_key: Optional[str]
     aliases: tuple
@@ -244,11 +248,23 @@ class BridgeConfig:
 
         topic = os.getenv("TELEGRAM_TOPIC_ID")
 
+        # Validação de plataformas
+        tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+        ds_token = os.getenv("DISCORD_BOT_TOKEN")
+        ds_channel = os.getenv("DISCORD_CHANNEL_ID")
+
+        has_tg = bool(tg_token and tg_chat)
+        has_ds = bool(ds_token and ds_channel)
+
+        if not has_tg and not has_ds:
+            raise RuntimeError("Nenhuma plataforma (Telegram ou Discord) configurada corretamente no .env!")
+
         return cls(
             base_url=os.getenv("BASE_URL"),
             ws_host=_compose_ws_host(os.getenv("WS_HOST"), os.getenv("WS_PORT", "8443")),
             chatroom_id=int(os.getenv("CHATROOM_ID", 1)),
-            tg_chat_id=int(os.getenv("TELEGRAM_CHAT_ID")),
+            tg_chat_id=int(tg_chat) if tg_chat else None,
             tg_topic_id=int(topic) if topic else None,
             imgbb_key=os.getenv("IMGBB_API_KEY"),
             aliases=aliases,
@@ -484,6 +500,63 @@ class ChatBridge:
         action = "atualizado" if cached else "cacheado"
         logger.info(f"avatar {action} p/ {label} (key={cache_key}): {public_url}")
         return public_url
+
+    async def get_discord_avatar(self, user: dict) -> Optional[bytes]:
+        """Retorna os bytes da imagem do usuário convertida para PNG e redimensionada."""
+        if not user:
+            return None
+
+        username = user.get("username") or user.get("name")
+        if not username:
+            return None
+
+        user_id = user.get("id", 0)
+        has_custom_img = bool(user.get("image"))
+
+        # Define o arquivo de cache local
+        cache_filename = f"{user_id}.png" if has_custom_img else "default.png"
+        cache_path = LOCAL_AVATAR_DIR / cache_filename
+
+        # Se já existe no cache, verifica se precisamos revalidar
+        if cache_path.exists():
+            # Por simplicidade, vamos usar o mesmo intervalo do Telegram para revalidação
+            # Se for a imagem padrão, não precisa revalidar quase nunca
+            if not has_custom_img:
+                return cache_path.read_bytes()
+
+            mtime = cache_path.stat().st_mtime
+            if (time.time() - mtime) < settings.avatar_revalidate_seconds:
+                return cache_path.read_bytes()
+
+        # URL da imagem
+        src = f"{self.base_url}/authenticated-images/user-avatars/{username}" if has_custom_img else f"{self.base_url}/img/profile.png"
+
+        # Download
+        data = await self.download_image(src)
+        if not data:
+            return cache_path.read_bytes() if cache_path.exists() else None
+
+        try:
+            # Processamento com Pillow
+            with Image.open(io.BytesIO(data)) as img:
+                # Converte para RGBA se necessário (para PNG)
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+
+                # Redimensiona (ex: 32x32)
+                img.thumbnail((32, 32), Image.Resampling.LANCZOS)
+
+                # Salva em um buffer e no arquivo
+                out = io.BytesIO()
+                img.save(out, format="PNG")
+                processed_data = out.getvalue()
+
+                # Salva no cache local
+                cache_path.write_bytes(processed_data)
+                return processed_data
+        except Exception as e:
+            logger.error(f"Erro ao processar avatar para Discord ({username}): {e}")
+            return cache_path.read_bytes() if cache_path.exists() else None
 
     async def process_media_group_delayed(self, gid: str, bot):
         await asyncio.sleep(settings.album_wait_seconds)
