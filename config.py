@@ -16,7 +16,7 @@ settings = SimpleNamespace(
     http_timeout=30.0,
     upload_timeout=120.0,
     heartbeat_interval=300,
-    cookie_probe_interval=600,
+    cookie_probe_interval=14400,
     safety_reconcile_interval=60,
     msg_map_limit=2000,
     queued_dedup_limit=1000,
@@ -70,7 +70,7 @@ def setup() -> None:
     settings.http_timeout = _envfloat("HTTP_TIMEOUT", 30.0)
     settings.upload_timeout = _envfloat("UPLOAD_TIMEOUT", 120.0)
     settings.heartbeat_interval = _envint("HEARTBEAT_INTERVAL", 300)
-    settings.cookie_probe_interval = _envint("COOKIE_PROBE_INTERVAL", 600)
+    settings.cookie_probe_interval = _envint("COOKIE_PROBE_INTERVAL", 14400)
     settings.safety_reconcile_interval = _envint("SAFETY_RECONCILE_INTERVAL", 60)
     settings.msg_map_limit = _envint("MSG_MAP_LIMIT", 2000)
     settings.queued_dedup_limit = _envint("QUEUED_DEDUP_LIMIT", 1000)
