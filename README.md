@@ -106,7 +106,7 @@ Edite `.env` preenchendo:
 | `MY_USERNAME` | Seu username no site (detecta suas mensagens) |
 | `TELEGRAM_USER` | Seu handle no Telegram (sem `@`) — menções viram tag clicável |
 | `MY_ALIASES` | Outros apelidos pelos quais te chamam no chat, separados por vírgula |
-| `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site |
+| `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site (imagens de mensagem se auto-deletam após **12h** no imgbb por padrão — configurável via `IMGBB_MSG_EXPIRATION_SECONDS`; avatares ficam permanentes) |
 
 > 💡 Todas as outras variáveis do `.env.example` são **tuning opcional** com defaults sensatos. Veja o arquivo pra detalhes de cada uma.
 
@@ -400,6 +400,9 @@ Destaques:
 - `TAG_ALIASES=true` — `@seunome` vira tag clicável
 - `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer `IMGBB_API_KEY` pra avatares custom)
 - `AVATAR_REVALIDATE_SECONDS=1800` — TTL do cache de avatar; pós-expiração, baixa de novo e só re-sobe se mudou
+- `IMGBB_MSG_EXPIRATION_SECONDS=43200` — tempo que imagens de mensagem ficam no imgbb antes do auto-delete (default 12h). **`0` = nunca deletar** (permanente). Range válido do imgbb: 60–15552000s. Avatares NÃO são afetados.
+
+**Sobre o imgbb:** quando você manda uma foto/álbum do Telegram pro site, o bot sobe a imagem no imgbb com **expiração de 12 horas** por padrão (auto-delete pelo lado do imgbb). É tempo suficiente pra todo mundo ver no chat, mas não fica eternamente hospedado no seu account. Ajuste via `IMGBB_MSG_EXPIRATION_SECONDS` no `.env` — use `0` se quiser que fiquem permanentes. Avatares **não** usam expiração — ficam sempre permanentes (revalidação por hash cuida da atualização).
 
 ---
 
