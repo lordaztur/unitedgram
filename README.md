@@ -23,6 +23,8 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um gr
 - 💬 **Mensagens do site → Telegram** em tempo real (via WebSocket)
 - 📤 **Mensagens do Telegram → site** (com suporte a BBCode, imagens e replies)
 - 🖼️ **Imagens nos dois sentidos** — site usa imgbb pra hospedar uploads do Telegram
+- 👤 **Avatar do remetente** como preview no Telegram (cache persistente, invalidação por hash)
+- 👥 **`/online`** mostra quem está no chat agora (presença em tempo real)
 - 🧵 **Threading de respostas** preservado entre os dois lados
 - 🗑️ **Botão de deletar** nas suas próprias mensagens (apaga em ambos)
 - 🔔 **Menções a você** no site viram marcações no Telegram
@@ -205,7 +207,7 @@ COOKIE="remember_web_xxx=...; laravel_cookie_consent=1; XSRF-TOKEN=...; laravel_
 ### 3. Teste local
 
 ```bash
-./venv/bin/python -m pytest   # 71 testes, deve passar tudo
+./venv/bin/python -m pytest   # 87 testes, deve passar tudo
 ./venv/bin/python main.py     # roda o bot em foreground (Ctrl+C pra parar)
 ```
 
@@ -392,7 +394,10 @@ nssm remove unitedgram confirm     # desinstalar
 
 O repositório já inclui um `Dockerfile` e um `docker-compose.yml`.
 
+O `docker-compose.yml` monta `./avatar_cache.json` como volume pra preservar o cache de avatares entre rebuilds. **Antes do primeiro `up`**, crie o arquivo vazio no host (senão o Docker cria como diretório):
+
 ```bash
+echo '{}' > avatar_cache.json
 docker compose up -d
 ```
 
@@ -414,6 +419,7 @@ docker compose down
 |---|---|
 | `/ping` | Responde `pong 🏓`. Teste de sanidade. |
 | `/status` | Uptime, tamanho da queue, se WS tá conectado, contadores de cache. |
+| `/online` | Lista quem está no chat do site agora. Avisa se o WS está desconectado. |
 
 E mensagens comuns no chat Telegram viram mensagens no shoutbox do site. Responder uma mensagem (reply do Telegram) vira uma citação BBCode automática.
 
@@ -429,6 +435,8 @@ Destaques:
 - `MIRROR_DELETIONS=false` — se `true`, apagar no site também apaga no Telegram
 - `SHOW_DELETE_BUTTON=true` — botão 🗑️ nas suas mensagens
 - `TAG_ALIASES=true` — `@seunome` vira tag clicável
+- `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer `IMGBB_API_KEY` pra avatares custom)
+- `AVATAR_REVALIDATE_SECONDS=1800` — TTL do cache de avatar; pós-expiração, baixa de novo e só re-sobe se mudou
 
 ---
 
