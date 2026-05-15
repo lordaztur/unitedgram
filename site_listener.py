@@ -210,27 +210,29 @@ async def cookie_health_probe(app: Application):
     alerted = False
     while True:
         await asyncio.sleep(settings.cookie_probe_interval)
-        status = await bridge.probe_session()
-        if status in (401, 403, 419):
+        success = await bridge.update_session_data()
+        if not success:
             if not alerted:
-                logger.error(f"🚨 Sessão expirou (HTTP {status}). Atualize COOKIE/CSRF_TOKEN no .env.")
+                logger.error("🚨 Sessão expirou ou falha ao atualizar cookies. Atualize cookies.txt e CSRF_TOKEN.")
                 try:
                     await app.bot.send_message(
                         chat_id=bridge.tg_chat_id,
                         message_thread_id=bridge.tg_topic_id,
                         text=(
-                            f"🚨 <b>Sessão expirada</b>\n"
-                            f"HTTP {status} em <code>{bridge.base_url}</code>.\n"
-                            f"Atualize <code>COOKIE</code> e <code>CSRF_TOKEN</code> no <code>.env</code> e reinicie."
+                            f"🚨 <b>Sessão expirada ou Erro de Rede</b>\n"
+                            f"Falha ao atualizar cookies em <code>{bridge.base_url}</code>.\n"
+                            f"Atualize <code>cookies/cookies.txt</code> e reinicie."
                         ),
                         parse_mode="HTML",
                     )
                 except Exception as e:
                     logger.warning(f"Não consegui enviar alerta no Telegram: {e}")
                 alerted = True
-        elif status == 200 and alerted:
+        elif success and alerted:
             logger.info("✅ Sessão recuperada")
             alerted = False
+        elif success:
+            logger.info("✅ Cookies atualizados e salvos com sucesso")
 
 
 async def initial_backfill(app: Application):
@@ -393,7 +395,7 @@ class WsSession:
         await self.sio.connect(
             self.bridge.ws_host,
             transports=["websocket"],
-            headers={"Cookie": self.bridge.headers["Cookie"], "Origin": self.bridge.base_url},
+            headers={"Cookie": self.bridge.get_cookie_string(), "Origin": self.bridge.base_url},
             socketio_path=settings.ws_path,
         )
         await self.sio.wait()

@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import http.cookiejar
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -27,8 +28,7 @@ __all__ = [
     "extract_reply_content",
 ]
 
-REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                "USER_ID", "CSRF_TOKEN", "COOKIE")
+REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")
 
 HTML_PARSER = "lxml"
 
@@ -223,11 +223,8 @@ class BridgeConfig:
     chatroom_id: int
     tg_chat_id: int
     tg_topic_id: Optional[int]
-    user_id: int
     imgbb_key: Optional[str]
     aliases: tuple
-    csrf_token: str
-    cookie: str
 
     @classmethod
     def from_env(cls) -> "BridgeConfig":
@@ -253,11 +250,8 @@ class BridgeConfig:
             chatroom_id=int(os.getenv("CHATROOM_ID", 1)),
             tg_chat_id=int(os.getenv("TELEGRAM_CHAT_ID")),
             tg_topic_id=int(topic) if topic else None,
-            user_id=int(os.getenv("USER_ID")),
             imgbb_key=os.getenv("IMGBB_API_KEY"),
             aliases=aliases,
-            csrf_token=os.getenv("CSRF_TOKEN"),
-            cookie=os.getenv("COOKIE"),
         )
 
 
@@ -269,44 +263,59 @@ class ChatBridge:
         self.chatroom_id = cfg.chatroom_id
         self.tg_chat_id = cfg.tg_chat_id
         self.tg_topic_id = cfg.tg_topic_id
-        self.user_id = cfg.user_id
         self.imgbb_key = cfg.imgbb_key
         self.aliases = cfg.aliases
+
+        self.user_id = 0
+        self.csrf_token = ""
 
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json",
             "X-Requested-With": "XMLHttpRequest",
-            "X-CSRF-TOKEN": cfg.csrf_token,
-            "Cookie": cfg.cookie,
             "User-Agent": settings.user_agent,
         }
 
+        cookies_dir = Path("cookies")
+        cookies_dir.mkdir(exist_ok=True)
+        self.cookie_jar = http.cookiejar.MozillaCookieJar(cookies_dir / "cookies.txt")
+        try:
+            self.cookie_jar.load(ignore_discard=True, ignore_expires=True)
+        except FileNotFoundError:
+            logger.warning("Arquivo de cookies não encontrado em cookies/cookies.txt")
+        except Exception as e:
+            logger.error(f"Erro ao carregar cookies: {e}")
+
         self.client = httpx.AsyncClient(
-            base_url=cfg.base_url, headers=self.headers,
-            timeout=settings.http_timeout, follow_redirects=True,
+            base_url=cfg.base_url,
+            headers=self.headers,
+            cookies=self.cookie_jar,
+            timeout=settings.http_timeout,
+            follow_redirects=True,
         )
         self.upload_client = httpx.AsyncClient(timeout=settings.upload_timeout)
 
         self.last_seen_id = 0
         self.cache_limit = settings.msg_map_limit
-        self.msg_map: "OrderedDict[int, Dict[str, Any]]" = OrderedDict()
-        self.media_buffer: Dict[str, Dict] = {}
+        self.msg_map: OrderedDict[int, dict[str, Any]] = OrderedDict()
+        self.media_buffer: dict[str, dict] = {}
 
         self.ws_channel = f"presence-chatroom.{cfg.chatroom_id}"
         self.msg_queue: asyncio.Queue = asyncio.Queue()
-        self.queued_ids: "OrderedDict[int, None]" = OrderedDict()
+        self.queued_ids: OrderedDict[int, None] = OrderedDict()
         self.queued_limit = settings.queued_dedup_limit
         self.ws_connected = asyncio.Event()
 
-        self.avatar_cache: Dict[int, Dict[str, Any]] = self._load_avatar_cache()
-        self.online: Dict[int, str] = {}
+        self.avatar_cache: dict[int, dict[str, Any]] = self._load_avatar_cache()
+        self.online: dict[int, str] = {}
 
     @classmethod
     def from_env(cls) -> "ChatBridge":
         return cls(BridgeConfig.from_env())
 
     async def __aenter__(self) -> "ChatBridge":
+        if not await self.update_session_data():
+            logger.warning("Falha ao recuperar USER_ID ou CSRF_TOKEN no startup. O bot pode falhar ao enviar mensagens.")
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -316,7 +325,7 @@ class ChatBridge:
         await self.client.aclose()
         await self.upload_client.aclose()
 
-    def _extract_all_image_urls(self, raw_html: str) -> List[str]:
+    def _extract_all_image_urls(self, raw_html: str) -> list[str]:
         if not raw_html: return []
         soup = BeautifulSoup(raw_html, HTML_PARSER)
         urls = []
@@ -378,11 +387,11 @@ class ChatBridge:
             _log_http_failure("upload_to_imgbb", e)
             return ""
 
-    def _load_avatar_cache(self) -> Dict[int, Dict[str, Any]]:
+    def _load_avatar_cache(self) -> dict[int, dict[str, Any]]:
         try:
             with open(AVATAR_CACHE_PATH, encoding="utf-8") as f:
                 raw = json.load(f)
-            result: Dict[int, Dict[str, Any]] = {}
+            result: dict[int, dict[str, Any]] = {}
             for k, v in raw.items():
                 uid = int(k)
                 if isinstance(v, str):
@@ -598,6 +607,57 @@ class ChatBridge:
         except Exception as e:
             _log_http_failure("probe_session", e)
             return -1
+
+    async def update_session_data(self) -> bool:
+        try:
+            resp = await self.client.get("/")
+            resp.raise_for_status()
+            self.cookie_jar.save(ignore_discard=True, ignore_expires=True)
+
+            soup = BeautifulSoup(resp.text, HTML_PARSER)
+
+            # 1. CSRF Token
+            csrf_meta = soup.find("meta", attrs={"name": "csrf-token"})
+            if csrf_meta and csrf_meta.get("content"):
+                self.csrf_token = str(csrf_meta["content"])
+                self.headers["X-CSRF-TOKEN"] = self.csrf_token
+                self.client.headers["X-CSRF-TOKEN"] = self.csrf_token
+                logger.debug(f"CSRF_TOKEN atualizado: {self.csrf_token[:10]}...")
+
+            # 2. USER_ID
+            user_id = 0
+            chatbody = soup.find(id="chatbody")
+            if chatbody:
+                x_data = chatbody.get("x-data") or ""
+                m = re.search(r"(?:id|\\u0022id\\u0022):(\d+)", x_data)
+                if m:
+                    user_id = int(m.group(1))
+
+            if not user_id:
+                # Fallback: wire:snapshot
+                for el in soup.find_all(attrs={"wire:snapshot": True}):
+                    try:
+                        snapshot = json.loads(el.get("wire:snapshot"))
+                        # snapshot.data.user[1].key
+                        uid = snapshot.get("data", {}).get("user", [None, {}])[1].get("key")
+                        if uid:
+                            user_id = int(uid)
+                            break
+                    except Exception:
+                        continue
+
+            if user_id:
+                if user_id != self.user_id:
+                    logger.info(f"USER_ID detectado: {user_id}")
+                self.user_id = user_id
+
+            return bool(self.csrf_token and self.user_id)
+        except Exception as e:
+            _log_http_failure("update_session_data", e)
+            return False
+
+    def get_cookie_string(self) -> str:
+        return "; ".join(f"{c.name}={c.value}" for c in self.cookie_jar)
 
     def find_tg_msg_id(self, site_id: int) -> Optional[int]:
         for tg_id, entry in self.msg_map.items():
