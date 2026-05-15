@@ -1,4 +1,5 @@
 import asyncio
+import html
 import time
 
 from telegram import Update
@@ -7,7 +8,11 @@ from telegram.ext import ContextTypes
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
 
-__all__ = ["check_chat", "ping", "status", "delete_callback", "forward_handler"]
+__all__ = [
+    "check_chat", "ping", "status",
+    "online_cmd",
+    "delete_callback", "forward_handler",
+]
 
 
 def check_chat(update: Update, bridge: ChatBridge) -> bool:
@@ -38,6 +43,26 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"queued_ids: <code>{len(bridge.queued_ids)}</code>"
     )
     await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def online_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    bridge: ChatBridge = context.bot_data['bridge']
+    if not check_chat(update, bridge):
+        return
+    stale = not bridge.ws_connected.is_set()
+    prefix = "⚠️ <i>WS desconectado — info pode estar defasada.</i>\n\n" if stale else ""
+    if not bridge.online:
+        await update.message.reply_text(
+            prefix + "📭 Ninguém online no chat agora.",
+            parse_mode="HTML",
+        )
+        return
+    names = sorted(bridge.online.values(), key=str.lower)
+    body = "\n".join(f"• <code>{html.escape(n)}</code>" for n in names)
+    await update.message.reply_text(
+        f"{prefix}👥 <b>{len(names)} online</b>\n{body}",
+        parse_mode="HTML",
+    )
 
 
 async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

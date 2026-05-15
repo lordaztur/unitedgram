@@ -335,7 +335,35 @@ class WsSession:
         @sio.on("presence:subscribed")
         async def on_presence_subscribed(*args):
             bridge.ws_connected.set()
-            logger.info(f"✅ Presence subscribed: {str(args)[:120]}")
+            members = next((a for a in args if isinstance(a, list)), [])
+            bridge.seed_online(members)
+            logger.info(f"✅ Presence subscribed: {len(bridge.online)} online")
+
+        @sio.on("presence:joining")
+        async def on_presence_joining(*args):
+            payload = next((a for a in args if isinstance(a, dict)), None)
+            if not payload:
+                return
+            try:
+                uid = int(payload.get("user_id"))
+            except (TypeError, ValueError):
+                return
+            info = payload.get("user_info") or {}
+            uname = info.get("username") or info.get("name")
+            if uid and uname:
+                bridge.mark_online(uid, str(uname))
+
+        @sio.on("presence:leaving")
+        async def on_presence_leaving(*args):
+            payload = next((a for a in args if isinstance(a, dict)), None)
+            if not payload:
+                return
+            try:
+                uid = int(payload.get("user_id"))
+            except (TypeError, ValueError):
+                return
+            if uid:
+                bridge.mark_offline(uid)
 
         @sio.on("subscription_error")
         async def on_sub_error(*args):

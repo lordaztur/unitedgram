@@ -15,7 +15,13 @@ from site_listener import (
     message_worker,
     run_websocket,
 )
-from telegram_handlers import delete_callback, forward_handler, ping, status
+from telegram_handlers import (
+    delete_callback,
+    forward_handler,
+    online_cmd,
+    ping,
+    status,
+)
 
 from telegram.ext import (
     Application,
@@ -36,6 +42,7 @@ async def main():
         app.bot_data['start_time'] = time.monotonic()
         app.add_handler(CommandHandler("ping", ping))
         app.add_handler(CommandHandler("status", status))
+        app.add_handler(CommandHandler("online", online_cmd))
         app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, forward_handler))
         app.add_handler(CallbackQueryHandler(delete_callback))
 

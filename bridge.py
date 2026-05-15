@@ -300,6 +300,7 @@ class ChatBridge:
         self.ws_connected = asyncio.Event()
 
         self.avatar_cache: Dict[int, Dict[str, Any]] = self._load_avatar_cache()
+        self.online: Dict[int, str] = {}
 
     @classmethod
     def from_env(cls) -> "ChatBridge":
@@ -408,6 +409,24 @@ class ChatBridge:
             tmp.replace(AVATAR_CACHE_PATH)
         except OSError as e:
             logger.warning(f"avatar_cache: falha ao salvar: {e}")
+
+    def seed_online(self, members: list) -> None:
+        self.online.clear()
+        for m in members or []:
+            try:
+                uid = int(m.get("user_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            info = m.get("user_info") or {}
+            uname = info.get("username") or info.get("name")
+            if uid and uname:
+                self.online[uid] = str(uname)
+
+    def mark_online(self, user_id: int, username: str) -> None:
+        self.online[user_id] = username
+
+    def mark_offline(self, user_id: int) -> None:
+        self.online.pop(user_id, None)
 
     async def get_avatar_url(self, user: dict) -> Optional[str]:
         if not user or not settings.show_user_avatars:
