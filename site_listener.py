@@ -20,7 +20,7 @@ from telegram.ext import Application
 
 from bridge import clean_html
 from config import settings
-from formatting import format_discord_message, format_telegram_message
+from formatting import format_discord_body, format_discord_message, format_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +195,9 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     # Estilo solicitado pelo usuário
                     # Usamos apenas o texto da mensagem na descrição, já que o nome está no autor
                     clean_text = clean_html(m.get("message") or "")
+                    description = format_discord_body(bridge, clean_text)
 
-                    embed = discord.Embed(description=clean_text if clean_text else "(Mensagem vazia)", color=0xFE0203 if m.get("type") == "notification" else 0x5865F2)
+                    embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=0xFE0203 if m.get("type") == "notification" else 0x5865F2)
 
                     # Footer com a data da mensagem (apenas o horário)
                     msg_date = m.get("created_at") or m.get("date") or time.strftime("%H:%M:%S")

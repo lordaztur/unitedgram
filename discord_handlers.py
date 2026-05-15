@@ -38,6 +38,9 @@ class DiscordBot(commands.Bot):
         text = message.content.strip()
         bbcode_img = ""
 
+        if message.attachments and not self.bridge.imgbb_key:
+            logger.warning("Anexo detectado no Discord, mas IMGBB_API_KEY não está configurada.")
+
         # Processa anexos (imagens)
         if message.attachments:
             for attachment in message.attachments:
@@ -46,13 +49,21 @@ class DiscordBot(commands.Bot):
                         # Baixa a imagem
                         img_bytes = await attachment.read()
                         # Upload para o ImgBB
-                        img_url = await self.bridge.upload_to_imgbb(img_bytes)
+                        img_url = await self.bridge.upload_to_imgbb(img_bytes, filename=attachment.filename)
                         if img_url:
                             bbcode_img += f"[img]{img_url}[/img] "
                         else:
                             logger.warning(f"Falha ao subir anexo do Discord: {attachment.filename}")
+                            try:
+                                await message.reply(f"❌ Falha no upload da imagem: {attachment.filename}")
+                            except:
+                                pass
                     except Exception as e:
                         logger.error(f"Erro ao processar anexo do Discord: {e}")
+                        try:
+                            await message.reply(f"⚠️ Erro interno ao processar imagem: {attachment.filename}")
+                        except:
+                            pass
 
         if not text and not bbcode_img:
             return

@@ -6,7 +6,7 @@ from config import settings
 __all__ = ["format_telegram_message", "format_discord_message", "build_bbcode_payload"]
 
 _RE_NEW = re.compile(
-    r'\[quote=@?(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?',
+    r"\[quote=(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?",
     re.DOTALL | re.IGNORECASE,
 )
 _RE_BB_QUOTE = re.compile(
@@ -176,6 +176,40 @@ def format_discord_message(bridge, msg_data: dict) -> str:
             return f"{display_name} citou {to_user_disp}:\n{quoted_format}"
 
     return f"{display_name}: {tag_aliases(raw_text)}"
+
+
+def format_discord_body(bridge, raw_text: str) -> str:
+    """Formata apenas o corpo da mensagem para o Discord (converte quotes, etc)."""
+    if not raw_text.strip():
+        return ""
+
+    to_user = None
+    quoted = ""
+    reply_txt = ""
+
+    m_new = _RE_NEW.search(raw_text)
+    m_bb_quote = _RE_BB_QUOTE.search(raw_text)
+
+    if m_new:
+        to_user = m_new.group("to")
+        quoted = m_new.group("quoted")
+        reply_txt = m_new.group("reply")
+    elif m_bb_quote:
+        to_user = m_bb_quote.group("to")
+        quoted = m_bb_quote.group("quoted")
+        reply_txt = m_bb_quote.group("reply")
+
+    if to_user is not None:
+        to_user_disp = f"**{to_user.strip()}**"
+        # Discord blockquote: prefix each line with >
+        quoted_format = "\n".join(f"> {line}" for line in (quoted or "").strip().split("\n"))
+
+        if reply_txt:
+            return f"respondeu a {to_user_disp}:\n{quoted_format}\n{reply_txt.strip()}"
+        else:
+            return f"citou {to_user_disp}:\n{quoted_format}"
+
+    return raw_text
 
 
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:

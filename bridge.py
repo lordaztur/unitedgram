@@ -116,7 +116,7 @@ def _find_quote_nodes(soup) -> list:
     nodes = list(soup.find_all(['blockquote', 'q']))
     for div in soup.find_all('div'):
         if _has_quote_class(div):
-            nodes.append(div)
+            nodes.extend(div)
     return nodes
 
 
@@ -201,10 +201,12 @@ def extract_reply_content(text: str) -> str:
     text = text.replace("[*/quote]", "").replace("[* /quote]", "")
 
     m = _RE_REPLY_BBCODE.search(text)
-    if m: return (m.group(2) or "").strip()
+    if m:
+        return (m.group(2) or "").strip()
 
     m = _RE_REPLY_BB_QUOTE.search(text)
-    if m: return (m.group(2) or "").strip()
+    if m:
+        return (m.group(2) or "").strip()
 
     m = _RE_REPLY_QUOTING.match(text)
     if m:
@@ -215,7 +217,8 @@ def extract_reply_content(text: str) -> str:
         return ""
 
     m = _RE_REPLY_OLD.match(text)
-    if m: return m.group(1).strip()
+    if m:
+        return m.group(1).strip()
 
     return text
 
@@ -384,16 +387,13 @@ class ChatBridge:
             await asyncio.sleep(wait)
         return None
 
-    async def upload_to_imgbb(self, image_data) -> str:
+    async def upload_to_imgbb(self, image_data, filename: str = "upload.jpg") -> str:
         if not self.imgbb_key:
             logger.error("IMGBB_API_KEY não configurada!")
             return ""
         try:
             payload = {"key": self.imgbb_key}
-            if hasattr(image_data, 'read'):
-                files = {"image": image_data}
-            else:
-                files = {"image": ("telegram_upload.jpg", bytes(image_data))}
+            files = {"image": image_data} if hasattr(image_data, "read") else {"image": (filename, bytes(image_data))}
             resp = await self.upload_client.post("https://api.imgbb.com/1/upload", data=payload, files=files)
             if resp.status_code == 200:
                 return resp.json()['data']['url']
@@ -585,8 +585,10 @@ class ChatBridge:
 
         if not final_text:
             if status_msg:
-                try: await status_msg.edit_text("❌ Falha no upload do álbum.")
-                except: pass
+                try:
+                    await status_msg.edit_text("❌ Falha no upload do álbum.")
+                except:
+                    pass
             return
 
         payload = final_text
@@ -595,15 +597,21 @@ class ChatBridge:
 
         if await self.send_message(payload):
             if status_msg:
-                try: await status_msg.edit_text("✅")
-                except: pass
+                try:
+                    await status_msg.edit_text("✅")
+                except:
+                    pass
                 await asyncio.sleep(2)
-                try: await status_msg.delete()
-                except: pass
+                try:
+                    await status_msg.delete()
+                except:
+                    pass
         else:
             if status_msg:
-                try: await status_msg.edit_text("❌ Erro envio site.")
-                except: pass
+                try:
+                    await status_msg.edit_text("❌ Erro envio site.")
+                except:
+                    pass
 
     def _cache_message(self, tg_msg_id: int, site_msg_data: dict):
         user = site_msg_data.get("user") or {}
