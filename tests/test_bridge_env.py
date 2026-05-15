@@ -48,8 +48,8 @@ class TestBridgeConfigFromEnv:
             BridgeConfig.from_env()
 
     def test_missing_required_raises(self, monkeypatch):
-        monkeypatch.delenv("COOKIE", raising=False)
-        with pytest.raises(RuntimeError, match="COOKIE"):
+        monkeypatch.delenv("BASE_URL", raising=False)
+        with pytest.raises(RuntimeError, match="BASE_URL"):
             BridgeConfig.from_env()
 
     def test_all_required_listed_in_error(self, monkeypatch):
@@ -82,8 +82,8 @@ class TestChatBridgeFromEnv:
         assert bridge.cfg.base_url == bridge.base_url
 
     def test_missing_required_raises(self, monkeypatch):
-        monkeypatch.delenv("COOKIE", raising=False)
-        with pytest.raises(RuntimeError, match="COOKIE"):
+        monkeypatch.delenv("BASE_URL", raising=False)
+        with pytest.raises(RuntimeError, match="BASE_URL"):
             ChatBridge.from_env()
 
 
