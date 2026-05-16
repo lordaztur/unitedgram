@@ -152,7 +152,11 @@ def _replace_quote_nodes_with_bbcode(nodes) -> None:
 
 def _soup_to_text(soup) -> str:
     for img in soup.find_all('img'):
-        img.decompose()
+        src = img.get("src")
+        if src:
+            img.replace_with(f" {src} ")
+        else:
+            img.decompose()
     for br in soup.find_all("br"):
         br.replace_with("\n")
     for p in soup.find_all(['p', 'div', 'li']):
@@ -161,7 +165,8 @@ def _soup_to_text(soup) -> str:
     lines = [line.strip(' \t\r') for line in text.split('\n')]
     text = "\n".join(lines)
     text = _RE_MULTI_BLANK.sub('\n\n', text)
-    return text.replace("[img]", "").replace("[/img]", "").strip()
+    text = re.sub(r"\[/?img(=[^\]]+)?\]", "", text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 def _collapse_nested_bbcode_quotes(text: str) -> str:

@@ -24,6 +24,8 @@ from formatting import format_discord_body, format_discord_message, format_teleg
 
 logger = logging.getLogger(__name__)
 
+_RE_IMAGE_URL = re.compile(r'https?://[^\s<>"]+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s<>"]*)?', re.IGNORECASE)
+
 __all__ = [
     "deliver_message",
     "message_worker",
@@ -92,10 +94,12 @@ async def _send_to_telegram(app: Application, bridge, images, text_out, reply_ma
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
-    preview = (
-        LinkPreviewOptions(url=avatar_url, prefer_small_media=True)
-        if avatar_url else NO_PREVIEW
-    )
+    if avatar_url:
+        preview = LinkPreviewOptions(url=avatar_url, prefer_small_media=True)
+    elif _RE_IMAGE_URL.search(text_out):
+        preview = LinkPreviewOptions(is_disabled=False, prefer_large_media=True)
+    else:
+        preview = NO_PREVIEW
     return await app.bot.send_message(
         chat_id=bridge.tg_chat_id,
         message_thread_id=bridge.tg_topic_id,
@@ -211,6 +215,11 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                                 pass
 
                     embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=user_color)
+
+                    # Tenta extrair uma URL de imagem para mostrar no Embed
+                    img_urls = _RE_IMAGE_URL.findall(description)
+                    if img_urls:
+                        embed.set_image(url=img_urls[0])
 
                     # Footer com a data da mensagem (apenas o horário)
                     msg_date = m.get("created_at") or m.get("date") or time.strftime("%H:%M:%S")
