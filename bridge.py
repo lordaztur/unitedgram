@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import hashlib
 import http.cookiejar
 import io
@@ -269,8 +270,8 @@ class BridgeConfig:
             raise RuntimeError("Nenhuma plataforma (Telegram ou Discord) configurada corretamente no .env!")
 
         return cls(
-            base_url=os.getenv("BASE_URL"),
-            ws_host=_compose_ws_host(os.getenv("WS_HOST"), os.getenv("WS_PORT", "8443")),
+            base_url=os.getenv("BASE_URL", ""),
+            ws_host=_compose_ws_host(os.getenv("WS_HOST", ""), os.getenv("WS_PORT", "8443")),
             chatroom_id=int(os.getenv("CHATROOM_ID", 1)),
             tg_chat_id=int(tg_chat) if tg_chat else None,
             tg_topic_id=int(topic) if topic else None,
@@ -350,16 +351,18 @@ class ChatBridge:
         await self.upload_client.aclose()
 
     def _extract_all_image_urls(self, raw_html: str) -> list[str]:
-        if not raw_html: return []
+        if not raw_html:
+            return []
         soup = BeautifulSoup(raw_html, HTML_PARSER)
         urls = []
         for img in soup.find_all('img'):
             if 'joypixels' in (img.get('class') or []):
                 continue
             src = img.get('src')
-            if src:
+            if src and isinstance(src, str):
                 if not src.startswith("http"):
-                    if src.startswith("/"): src = src[1:]
+                    if src.startswith("/"):
+                        src = src[1:]
                     base = self.base_url if self.base_url.endswith("/") else self.base_url + "/"
                     src = base + src
                 urls.append(src)
@@ -613,10 +616,8 @@ class ChatBridge:
 
         if not final_text:
             if status_msg:
-                try:
+                with contextlib.suppress(BaseException):
                     await status_msg.edit_text("❌ Falha no upload do álbum.")
-                except:
-                    pass
             return
 
         payload = final_text
@@ -625,21 +626,15 @@ class ChatBridge:
 
         if await self.send_message(payload):
             if status_msg:
-                try:
+                with contextlib.suppress(BaseException):
                     await status_msg.edit_text("✅")
-                except:
-                    pass
                 await asyncio.sleep(2)
-                try:
+                with contextlib.suppress(BaseException):
                     await status_msg.delete()
-                except:
-                    pass
         else:
             if status_msg:
-                try:
+                with contextlib.suppress(BaseException):
                     await status_msg.edit_text("❌ Erro envio site.")
-                except:
-                    pass
 
     def _cache_message(self, msg_id: int, site_msg_data: dict):
         user = site_msg_data.get("user") or {}

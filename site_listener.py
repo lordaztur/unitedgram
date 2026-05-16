@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import html
 import io
 import logging
@@ -209,10 +210,8 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                         group_data = user_data.get("group") or {}
                         hex_color = group_data.get("color") or (user_data.get("chat_status") or {}).get("color")
                         if hex_color and hex_color.startswith("#"):
-                            try:
+                            with contextlib.suppress(ValueError):
                                 user_color = int(hex_color.lstrip("#"), 16)
-                            except ValueError:
-                                pass
 
                     embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=user_color)
 
@@ -233,17 +232,13 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
 
                     msg_ds = await channel.send(file=file, embed=embed)
                     if is_me and settings.show_delete_button:
-                        try:
+                        with contextlib.suppress(BaseException):
                             await msg_ds.add_reaction("🗑️")
-                        except:
-                            pass
                 else:
                     msg_ds = await channel.send(text_ds)
                     if is_me and settings.show_delete_button:
-                        try:
+                        with contextlib.suppress(BaseException):
                             await msg_ds.add_reaction("🗑️")
-                        except:
-                            pass
                 sent_msg_ds_id = msg_ds.id
         except Exception as e:
             logger.error(f"Erro enviando msg {site_id} p/ Discord: {e}")

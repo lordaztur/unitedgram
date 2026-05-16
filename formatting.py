@@ -54,7 +54,8 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
 
     raw_text = clean_html(msg_data.get("message") or "")
 
-    if not raw_text.strip(): return f"💬 <b>{display_name}</b> enviou:"
+    if not raw_text.strip():
+        return f"💬 <b>{display_name}</b> enviou:"
 
     to_user = None
     quoted = ""
@@ -102,10 +103,7 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
         to_user = to_user.strip()
         clean_to_user = to_user.lstrip("@")
 
-        if clean_to_user.lower() in bridge.aliases and settings.tag_aliases and settings.telegram_user:
-            to_user_disp = f"@{settings.telegram_user}"
-        else:
-            to_user_disp = html.escape(to_user)
+        to_user_disp = f"@{settings.telegram_user}" if clean_to_user.lower() in bridge.aliases and settings.tag_aliases and settings.telegram_user else html.escape(to_user)
 
         quoted_format = html.escape(tag_aliases(quoted or "").strip())
         reply_format = html.escape(tag_aliases(reply_txt or "").strip())
@@ -222,7 +220,8 @@ def format_discord_body(bridge, raw_text: str) -> str:
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:
     to_user = original_data.get("handle", "").lstrip("@")
     quoted_text = original_data.get("text", "")
-    if len(quoted_text) > 240: quoted_text = quoted_text[:240].rstrip() + "..."
+    if len(quoted_text) > 240:
+        quoted_text = quoted_text[:240].rstrip() + "..."
 
     for c, r in [("[", "［"), ("]", "］")]:
         to_user = to_user.replace(c, r)

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import os
 
@@ -54,16 +55,12 @@ class DiscordBot(commands.Bot):
                             bbcode_img += f"[img]{img_url}[/img] "
                         else:
                             logger.warning(f"Falha ao subir anexo do Discord: {attachment.filename}")
-                            try:
+                            with contextlib.suppress(BaseException):
                                 await message.reply(f"❌ Falha no upload da imagem: {attachment.filename}")
-                            except:
-                                pass
                     except Exception as e:
                         logger.error(f"Erro ao processar anexo do Discord: {e}")
-                        try:
+                        with contextlib.suppress(BaseException):
                             await message.reply(f"⚠️ Erro interno ao processar imagem: {attachment.filename}")
-                        except:
-                            pass
 
         if not text and not bbcode_img:
             return
@@ -93,10 +90,8 @@ class DiscordBot(commands.Bot):
             except Exception:
                 pass
         else:
-            try:
+            with contextlib.suppress(Exception):
                 await message.add_reaction("❌")
-            except Exception:
-                pass
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
@@ -119,10 +114,8 @@ class DiscordBot(commands.Bot):
                     logger.warning(f"Erro ao deletar msg no Discord: {e}")
             else:
                 # Se falhar (ex: não é dono da msg), remove a reação do usuário
-                try:
+                with contextlib.suppress(BaseException):
                     await reaction.remove(user)
-                except:
-                    pass
 
     async def setup_hook(self):
         # Comandos simples
