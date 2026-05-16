@@ -27,9 +27,9 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 - 👤 **Avatares Premium** — No Telegram (via ImgBB) e Discord (Embeds nativos com suporte a **GIFs animados**)
 - 👥 **`/online`** (Telegram) ou `!online` (Discord) mostra quem está no chat agora
 - 🧵 **Threading de respostas** preservado entre todas as pontas
-- 🗑️ **Botão de deletar** (Telegram) — apaga a mensagem em todos os lugares
+- 🗑️ **Delete sincronizado** — botão no Telegram, reação 🗑️ no Discord, apaga em todos os lugares
 - 🔌 **Arquitetura Flexível** — Rode apenas com Discord, apenas com Telegram ou ambos ao mesmo tempo
-- 🔔 **Menções a você** no site viram marcações no Telegram
+- 🔔 **Menções a você** no site viram marcações no Telegram e Discord (com `DISCORD_USER_ID`)
 - 🚨 **Alerta automático** se a sessão/cookie do site expira
 - 💓 **Heartbeat + health check** pra debugar remotamente
 - 🔄 **Reconexão WS automática** com fallback HTTP quando cai
@@ -40,7 +40,11 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 
 | Camada | Biblioteca | Pra quê |
 |---|---|---|
+| Bot Telegram | [`python-telegram-bot`](https://python-telegram-bot.org/) 22.x | API oficial do Telegram |
 | Bot Discord | [`discord.py`](https://discordpy.readthedocs.io/) 2.x | API oficial do Discord |
+| HTTP async | [`httpx`](https://www.python-httpx.org/) | Chamadas ao site (cookies + CSRF auto-refresh) |
+| WebSocket | [`python-socketio`](https://python-socketio.readthedocs.io/) 4.x | Eventos em tempo real (EIO v3, Socket.IO 2.x) |
+| Parsing HTML | [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/) + `lxml` | Limpeza de HTML do shoutbox |
 | Imagens | [`Pillow`](https://python-pillow.org/) | Processamento e resize de avatares (incluindo GIFs) |
 | Config | [`python-dotenv`](https://github.com/theskumar/python-dotenv) | Carregar `.env` |
 | Testes | [`pytest`](https://docs.pytest.org/) + `pytest-asyncio` | Unit + async tests |
@@ -49,11 +53,22 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 
 ## 📋 Pré-requisitos
 
-- � **Docker instalado** — necessário para rodar via container
-- 🐍 **Python 3.11+**
+- 🐳 **Docker instalado** — necessário se for rodar via container
+- 🐍 **Python 3.11+** — se for rodar nativo
 - 🖥️ **Um computador que possa, de preferência, ficar ligado direto** (pra manter o chat funcionando)
 - 🤖 **Token de bot do Telegram** (Opcional) ou **Bot do Discord** (Opcional)
 - 🖼️ **API key da [imgbb](https://api.imgbb.com/)** — Recomendada para avatares e envio de imagens
+
+---
+
+## 📱 Tutoriais por plataforma
+
+Cada plataforma tem seu próprio guia passo a passo com criação de bot, permissões, IDs, variáveis e troubleshooting:
+
+- 💬 **[Bot do Telegram](docs/telegram.md)** — criação no @BotFather, `/setprivacy`, comandos `/ping` `/status` `/online`, botão de delete.
+- 🎮 **[Bot do Discord](docs/discord.md)** — Developer Portal, Message Content Intent, OAuth permissions, embed com avatar + cor do grupo, delete-mirror via reação 🗑️.
+
+Você pode ativar uma, outra ou ambas via `ENABLE_TELEGRAM` / `ENABLE_DISCORD` no `.env`.
 
 ---
 
@@ -91,19 +106,12 @@ Edite `.env` preenchendo:
 > 🍪 **Cookies não vão no `.env`**. Salve um arquivo Netscape `cookies.txt` em `cookies/cookies.txt` — o bot lê de lá, refresca a sessão sozinho a cada 4h e descobre `USER_ID` e `CSRF_TOKEN` dinamicamente. Detalhes no passo abaixo.
 
 #### 💬 Telegram (Opcional)
-| Var | Onde pegar |
-|---|---|
-| `ENABLE_TELEGRAM` | `true` ou `false` |
-| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) → `/newbot` |
-| `TELEGRAM_CHAT_ID` | ID do grupo ou chat |
-| `TELEGRAM_TOPIC_ID` | (Opcional) ID do tópico |
+
+`ENABLE_TELEGRAM=true`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, opcionalmente `TELEGRAM_TOPIC_ID`. **Passo a passo completo + comandos no [tutorial do Telegram](docs/telegram.md)**.
 
 #### 🎮 Discord (Opcional)
-| Var | Onde pegar |
-|---|---|
-| `ENABLE_DISCORD` | `true` ou `false` |
-| `DISCORD_BOT_TOKEN` | [Discord Developer Portal](https://discord.com/developers/applications) |
-| `DISCORD_CHANNEL_ID` | ID do canal de texto (botão direito no canal → Copiar ID) |
+
+`ENABLE_DISCORD=true`, `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID`. **Passo a passo completo (incluindo Message Content Intent e permissões OAuth) no [tutorial do Discord](docs/discord.md)**.
 
 #### 👤 Identidade (opcionais mas recomendadas)
 
@@ -121,22 +129,10 @@ Edite `.env` preenchendo:
 
 #### 🧭 Como pegar os valores na prática
 
-<details>
-<summary><b>🤖 Criar o bot no Telegram e liberar leitura de grupo</b></summary>
+Pra criar bot do Telegram, criar bot do Discord e pegar IDs específicos de cada plataforma, veja os tutoriais dedicados:
 
-1. Abra [@BotFather](https://t.me/BotFather), mande `/newbot`
-2. Dê um nome (ex: *MeuBridge*)
-3. Crie um username terminado em `bot` (ex: *meubridge_bot*)
-4. Copie o token que aparece → `TELEGRAM_BOT_TOKEN`
-
-⚠️ **Importante:** bots **não leem mensagens de grupo por padrão**. Libere:
-
-- No [@BotFather](https://t.me/BotFather) mande `/setprivacy`
-- Selecione seu bot → escolha **DISABLE**
-
-E no grupo do Telegram, **adicione o bot como admin** (senão ele não consegue apagar mensagens dele próprio, enviar em tópicos, etc.).
-
-</details>
+- 💬 [Bot do Telegram](docs/telegram.md)
+- 🎮 [Bot do Discord](docs/discord.md)
 
 <details>
 <summary><b>🍪 Exportar o <code>cookies.txt</code> do navegador</b></summary>
@@ -383,27 +379,26 @@ docker compose down
 ```
 ---
 
-## 🎮 Comandos no Telegram
+## 🎮 Comandos
 
-| Comando | Função |
-|---|---|
-| `/ping` | Responde `pong 🏓`. Teste de sanidade. |
-| `/status` | Uptime, status do WebSocket e contadores. |
-| `/online` | Lista quem está no chat do site agora. |
+| Telegram | Discord | Função |
+|---|---|---|
+| `/ping` | `!ping` | Responde `pong 🏓`. Teste de sanidade. |
+| `/status` | — | Uptime, status do WebSocket e contadores de cache (só TG por enquanto). |
+| `/online` | `!online` | Lista quem está no chat do site agora. |
 
-## 🎮 Comandos no Discord
-| Comando | Função |
-|---|---|
-| `!ping` | Responde `pong 🏓`. |
-| `!online` | Lista quem está no chat do site agora. |
+Mensagens comuns no chat (Telegram ou Discord) viram mensagens no shoutbox do site. Responder a uma mensagem (reply nativo da plataforma) vira citação BBCode automática.
 
-E mensagens comuns no chat Telegram viram mensagens no shoutbox do site. Responder uma mensagem (reply do Telegram) vira uma citação BBCode automática.
+Detalhes específicos por plataforma (comportamento do delete, embed do Discord, avatar como link preview, troubleshooting):
+
+- [Bot do Telegram](docs/telegram.md)
+- [Bot do Discord](docs/discord.md)
 
 ---
 
 ## 🔧 Customização
 
-**15 variáveis opcionais** controlam timeouts, intervalos, limites de cache, backoff de reconexão, features. Tudo documentado no `.env.example`.
+Várias variáveis opcionais controlam timeouts, intervalos, limites de cache, backoff de reconexão, features. Tudo documentado no `.env.example`.
 
 Destaques:
 
@@ -427,7 +422,7 @@ Destaques:
 ./venv/bin/python -m pytest tests/test_bridge_parsers.py   # só um arquivo
 ```
 
-Cobre: parsing de HTML, formatação de mensagens Telegram, extração de replies, validação de env, auth flow, dedup/backfill, HTTP client mockado.
+Cobre: parsing de HTML, formatação de mensagens (Telegram e Discord), extração de replies, validação de env, auth flow, dedup/backfill, HTTP client mockado.
 
 ---
 
@@ -436,26 +431,29 @@ Cobre: parsing de HTML, formatação de mensagens Telegram, extração de replie
 ```
 ┌────────────┐   WebSocket (wss://host:8443)   ┌──────────────┐
 │   site     │ ◀── eventos em tempo real ───▶│              │
-│  UNIT3D    │                                 │              │
-│            │       HTTP (site REST API)      │              │
-│            │ ◀───── fallback + send ──────▶│  unitedgram  │
-└────────────┘                                 │    (bot)     │
-                                               │              │
-                                               │              │
-                                               │              │
-┌────────────┐          Bot API (polling)      │              │
+│  UNIT3D    │       HTTP (site REST API)      │              │
+│            │ ◀───── fallback + send ──────▶│              │
+└────────────┘                                 │              │
+                                               │  unitedgram  │
+┌────────────┐          Bot API (polling)      │    (bot)     │
 │  Telegram  │ ◀──────── send/receive ──────▶│              │
 │  (chat)    │                                 │              │
+└────────────┘                                 │              │
+                                               │              │
+┌────────────┐         Gateway WS + REST       │              │
+│  Discord   │ ◀──────── send/receive ──────▶│              │
+│  (canal)   │                                 │              │
 └────────────┘                                 └──────────────┘
 ```
 
-**6 módulos:**
-- `main.py` — entrypoint, wiring de tasks
+**Módulos:**
+- `main.py` — entrypoint, wiring condicional de tasks (TG + DS)
 - `config.py` — setup de logging, carrega `.env`, defaults dos knobs
-- `bridge.py` — client HTTP do site + parsers BBCode/HTML
-- `site_listener.py` — WS client, worker de entrega, health checks
-- `telegram_handlers.py` — comandos e forward de Telegram → site
-- `formatting.py` — renderização de mensagens pro Telegram
+- `bridge.py` — client HTTP do site, cookie/CSRF refresh, parsers BBCode/HTML, caches de avatar
+- `site_listener.py` — WS client UNIT3D, worker de entrega que faz fan-out pra TG e DS, health checks
+- `telegram_handlers.py` — comandos `/ping` `/status` `/online` e forward de Telegram → site
+- `discord_handlers.py` — comandos `!ping` `!online` e forward de Discord → site
+- `formatting.py` — renderização de mensagens pra cada plataforma (HTML pro TG, Markdown/embed pro DS)
 
 ---
 
