@@ -110,7 +110,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo = update.message.photo[-1]
             file_obj = await context.bot.get_file(photo.file_id)
             file_bytes = await file_obj.download_as_bytearray()
-            img_url = await bridge.upload_to_imgbb(file_bytes)
+            img_url = await bridge.upload_to_imgbb(file_bytes, ephemeral=True)
             if img_url: bbcode_img = f"[img]{img_url}[/img]"
             else: await update.message.reply_text("❌ Falha no upload.")
         except Exception: pass

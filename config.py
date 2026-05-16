@@ -31,6 +31,7 @@ settings = SimpleNamespace(
     mirror_deletions=False,
     show_user_avatars=True,
     avatar_revalidate_seconds=1800,
+    imgbb_msg_expiration_seconds=43200,
     enable_telegram=True,
     enable_discord=False,
 )
@@ -88,6 +89,7 @@ def setup() -> None:
     settings.mirror_deletions = _envbool("MIRROR_DELETIONS", False)
     settings.show_user_avatars = _envbool("SHOW_USER_AVATARS", True)
     settings.avatar_revalidate_seconds = _envint("AVATAR_REVALIDATE_SECONDS", 1800)
+    settings.imgbb_msg_expiration_seconds = _envint("IMGBB_MSG_EXPIRATION_SECONDS", 43200)
     settings.enable_telegram = _envbool("ENABLE_TELEGRAM", True)
     settings.enable_discord = _envbool("ENABLE_DISCORD", False)
     _initialized = True

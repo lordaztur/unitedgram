@@ -9,4 +9,5 @@ services:
       - .env
     volumes:
       - ./avatar_cache.json:/app/avatar_cache.json
+      - ./cookies:/app/cookies
     command: ["python", "main.py"]

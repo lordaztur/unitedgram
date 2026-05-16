@@ -87,9 +87,8 @@ Edite `.env` preenchendo:
 | `BASE_URL` | URL do tracker sem barra final (ex: `https://tracker.com`) |
 | `WS_HOST` | Mesmo host do `BASE_URL`, sem porta (a porta vem do `WS_PORT`, default `8443`) |
 | `CHATROOM_ID` | ID da sala (descubra em `/api/chat/rooms` logado) |
-| `USER_ID` | Seu ID numérico no site |
-| `CSRF_TOKEN` | Meta tag `<meta name="csrf-token">` ou cookie `XSRF-TOKEN` |
-| `COOKIE` | Cookie completo da sua sessão logada (DevTools → Application → Cookies → copie o header `Cookie` inteiro) |
+
+> 🍪 **Cookies não vão no `.env`**. Salve um arquivo Netscape `cookies.txt` em `cookies/cookies.txt` — o bot lê de lá, refresca a sessão sozinho a cada 4h e descobre `USER_ID` e `CSRF_TOKEN` dinamicamente. Detalhes no passo abaixo.
 
 #### 💬 Telegram (Opcional)
 | Var | Onde pegar |
@@ -114,7 +113,7 @@ Edite `.env` preenchendo:
 | `TELEGRAM_USER` | Seu handle no Telegram (sem `@`) — menções viram tag clicável |
 | `DISCORD_USER_ID` | Seu ID numérico no Discord (para receber notificações/menções) |
 | `MY_ALIASES` | Outros apelidos pelos quais te chamam no chat, separados por vírgula |
-| `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site |
+| `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site (imagens de mensagem se auto-deletam após **12h** no imgbb por padrão — configurável via `IMGBB_MSG_EXPIRATION_SECONDS`; avatares ficam permanentes) |
 
 > 💡 Todas as outras variáveis do `.env.example` são **tuning opcional** com defaults sensatos. Veja o arquivo pra detalhes de cada uma.
 
@@ -140,72 +139,29 @@ E no grupo do Telegram, **adicione o bot como admin** (senão ele não consegue 
 </details>
 
 <details>
-<summary><b>🕵️ Extrair <code>USER_ID</code> e <code>CSRF_TOKEN</code> do site</b></summary>
+<summary><b>🍪 Exportar o <code>cookies.txt</code> do navegador</b></summary>
 
-1. Abra o site **logado**
-2. `F12` → aba **Console**
-3. Cole e aperte **Enter**:
+Use uma extensão que exporta cookies no **formato Netscape** (o que o bot espera):
 
-```js
-(function() {
-    try {
-        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
-        const csrfToken = csrfMeta ? csrfMeta.content : "CSRF NÃO ENCONTRADO";
+- Chrome / Edge: [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+- Firefox: [cookies.txt](https://addons.mozilla.org/firefox/addon/cookies-txt/)
 
-        let userID = "USER_ID NÃO ENCONTRADO";
-        const chatbox = document.querySelector('#chatbody');
-        if (chatbox) {
-            const xData = chatbox.getAttribute('x-data') || '';
-            const match = xData.match(/\\u0022id\\u0022:(\d+)/) || xData.match(/"id":(\d+)/);
-            if (match && match[1]) userID = match[1];
-        }
+Passos:
 
-        if (userID === "USER_ID NÃO ENCONTRADO") {
-            const wireElements = document.querySelectorAll('[wire\\:snapshot]');
-            for (let el of wireElements) {
-                try {
-                    const snapshot = JSON.parse(el.getAttribute('wire:snapshot'));
-                    if (snapshot?.data?.user?.[1]?.key) {
-                        userID = snapshot.data.user[1].key;
-                        break;
-                    }
-                } catch (e) {}
-            }
-        }
+1. Faça login no tracker normalmente.
+2. Abra a extensão (ícone na barra) com a aba do tracker ativa.
+3. **Exporte** os cookies daquele domínio (geralmente um botão "Export" ou "Download").
+4. Salve o arquivo como `cookies.txt` dentro da pasta `cookies/` do projeto:
 
-        console.log("%c COPIE OS DADOS ABAIXO:", "background:#222;color:#bada55;font-size:15px;padding:5px;border-radius:3px;");
-        console.log("USER_ID: " + userID);
-        console.log("CSRF_TOKEN: " + csrfToken);
-    } catch (error) {
-        console.error("Erro:", error);
-    }
-})();
+```
+unitedgram/
+└── cookies/
+    └── cookies.txt
 ```
 
-Copie os valores que aparecerem no console.
+`USER_ID` e `CSRF_TOKEN` **não precisam** ser configurados — o bot os extrai automaticamente da home do site no primeiro request e refresca a cada `COOKIE_PROBE_INTERVAL` segundos (default 4h). Os cookies são também re-salvos no `.txt` a cada refresh, então a sessão se renova sozinha enquanto você mantiver o `remember_web` válido.
 
-> Se `USER_ID NÃO ENCONTRADO`, você não está numa página com o chatbox visível. Volte pra home do tracker e tente de novo.
-
-</details>
-
-<details>
-<summary><b>🍪 Extrair o <code>COOKIE</code> completo da sessão</b></summary>
-
-1. Ainda no `F12`, vá na aba **Network** (ou Rede)
-2. Aperte **F5** pra recarregar a página
-3. No filtro, digite `doc` (ou clique em **HTML**)
-4. Clique no **primeiro item** da lista (geralmente tem o nome do site)
-5. Lateral direita → aba **Headers** → role até **Request Headers**
-6. Procure a linha **Cookie**
-7. Copie **TUDO** que está depois de `Cookie:` (é uma linha longa com `laravel_session=...; XSRF-TOKEN=...; remember_web=...`)
-
-Cola inteiro entre aspas no `.env`:
-
-```env
-COOKIE="remember_web_xxx=...; laravel_cookie_consent=1; XSRF-TOKEN=...; laravel_session=..."
-```
-
-⚠️ O cookie **pode expirar** depois de algumas semanas. Se isso acontecer, o bot te avisa no próprio Telegram com `🚨 Sessão expirada` — repita o processo e atualize o `.env`.
+⚠️ Se a sessão expirar (logout no site, troca de IP, etc.), o bot te avisa no Telegram com `🚨 Sessão expirada`. Aí é só repetir o export e reiniciar.
 
 </details>
 
@@ -401,10 +357,17 @@ nssm remove unitedgram confirm     # desinstalar
 
 O repositório já inclui um `Dockerfile` e um `docker-compose.yml`.
 
-O `docker-compose.yml` monta `./avatar_cache.json` como volume pra preservar o cache de avatares entre rebuilds. **Antes do primeiro `up`**, crie o arquivo vazio no host (senão o Docker cria como diretório):
+O `docker-compose.yml` monta dois volumes pra preservar estado entre rebuilds:
+
+- `./avatar_cache.json` → cache de avatares (precisa existir como arquivo)
+- `./cookies/` → diretório onde o bot lê/atualiza `cookies.txt` da sessão
+
+**Antes do primeiro `up`**, prepare os dois (senão o Docker pode criar `avatar_cache.json` como diretório, e o bot fica sem sessão):
 
 ```bash
 echo '{}' > avatar_cache.json
+mkdir -p cookies
+# Exporte cookies.txt do navegador (veja Passo 2) e salve em cookies/cookies.txt
 docker compose up -d
 ```
 
@@ -450,6 +413,9 @@ Destaques:
 - `TAG_ALIASES=true` — `@seunome` vira tag clicável
 - `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer `IMGBB_API_KEY` pra avatares custom)
 - `AVATAR_REVALIDATE_SECONDS=1800` — TTL do cache de avatar; pós-expiração, baixa de novo e só re-sobe se mudou
+- `IMGBB_MSG_EXPIRATION_SECONDS=43200` — tempo que imagens de mensagem ficam no imgbb antes do auto-delete (default 12h). **`0` = nunca deletar** (permanente). Range válido do imgbb: 60–15552000s. Avatares NÃO são afetados.
+
+**Sobre o imgbb:** quando você manda uma foto/álbum do Telegram pro site, o bot sobe a imagem no imgbb com **expiração de 12 horas** por padrão (auto-delete pelo lado do imgbb). É tempo suficiente pra todo mundo ver no chat, mas não fica eternamente hospedado no seu account. Ajuste via `IMGBB_MSG_EXPIRATION_SECONDS` no `.env` — use `0` se quiser que fiquem permanentes. Avatares **não** usam expiração — ficam sempre permanentes (revalidação por hash cuida da atualização).
 
 ---
 

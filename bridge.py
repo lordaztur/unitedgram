@@ -395,12 +395,14 @@ class ChatBridge:
             await asyncio.sleep(wait)
         return None
 
-    async def upload_to_imgbb(self, image_data, filename: str = "upload.jpg") -> str:
+    async def upload_to_imgbb(self, image_data, ephemeral: bool = False, filename: str = "upload.jpg") -> str:
         if not self.imgbb_key:
             logger.error("IMGBB_API_KEY não configurada!")
             return ""
         try:
             payload = {"key": self.imgbb_key}
+            if ephemeral and settings.imgbb_msg_expiration_seconds > 0:
+                payload["expiration"] = str(settings.imgbb_msg_expiration_seconds)
             files = {"image": image_data} if hasattr(image_data, "read") else {"image": (filename, bytes(image_data))}
             resp = await self.upload_client.post("https://api.imgbb.com/1/upload", data=payload, files=files)
             if resp.status_code == 200:
@@ -603,7 +605,7 @@ class ChatBridge:
             try:
                 file_obj = await bot.get_file(photo_obj.file_id)
                 file_bytes = await file_obj.download_as_bytearray()
-                return await self.upload_to_imgbb(file_bytes)
+                return await self.upload_to_imgbb(file_bytes, ephemeral=True)
             except Exception as e:
                 logger.warning(f"upload álbum item {photo_obj.file_id}: {e}")
                 return ""
