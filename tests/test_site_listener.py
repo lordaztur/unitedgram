@@ -75,7 +75,7 @@ class TestInitialBackfill:
         msgs = [{"id": i} for i in range(1, 101)]
         bridge = _bridge_returning(msgs)
         try:
-            await initial_backfill(FakeApp(bridge))
+            await initial_backfill(bridge)
             assert bridge.last_seen_id == 90
             assert 1 in bridge.queued_ids
             assert 90 in bridge.queued_ids
@@ -86,7 +86,7 @@ class TestInitialBackfill:
     async def test_no_messages_is_noop(self):
         bridge = _bridge_returning([])
         try:
-            await initial_backfill(FakeApp(bridge))
+            await initial_backfill(bridge)
             assert bridge.last_seen_id == 0
             assert len(bridge.queued_ids) == 0
         finally:
@@ -96,7 +96,7 @@ class TestInitialBackfill:
         msgs = [{"id": i} for i in range(1, 6)]
         bridge = _bridge_returning(msgs)
         try:
-            await initial_backfill(FakeApp(bridge))
+            await initial_backfill(bridge)
             assert len(bridge.queued_ids) == 0
             assert bridge.last_seen_id == 0
         finally:
@@ -106,7 +106,7 @@ class TestInitialBackfill:
         msgs = [{"id": i} for i in range(1, 101)]
         bridge = _bridge_returning(msgs)
         try:
-            await initial_backfill(FakeApp(bridge))
+            await initial_backfill(bridge)
             assert bridge.enqueue_message({"id": 50}) is False
             assert bridge.enqueue_message({"id": 150}) is True
         finally:
@@ -128,7 +128,7 @@ class TestDeliverMessage:
         m = self._msg()
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.calls == 3
             assert 42 in bridge.msg_map
             assert bridge.msg_map[42]["site_id"] == 320789
@@ -143,7 +143,7 @@ class TestDeliverMessage:
         try:
             bridge.enqueue_message(m)
             assert 320796 in bridge.queued_ids
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.calls == 4
             assert not bridge.msg_map
             assert 320796 not in bridge.queued_ids
@@ -162,7 +162,7 @@ class TestDeliverMessage:
         m["message"] = 'olha <img src="https://i.imgur.com/PdJtDFc.png"> ai'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.photo_args == ["https://i.imgur.com/PdJtDFc.png"]
             assert 77 in bridge.msg_map
         finally:
@@ -182,7 +182,7 @@ class TestDeliverMessage:
         m["message"] = f'<img src="{bridge.base_url}/uploads/x.png">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert downloaded == [f"{bridge.base_url}/uploads/x.png"]
             assert bot.photo_args == [b"BYTES"]
             assert 88 in bridge.msg_map
@@ -202,7 +202,7 @@ class TestDeliverMessage:
         m["message"] = f'<img src="{internal_url}">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.photo_args == [internal_url]
             assert 99 in bridge.msg_map
         finally:
@@ -220,7 +220,7 @@ class TestDeliverMessage:
         m["message"] = 'reacao <img src="https://tenor.com/foo.gif">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.animation_args == ["https://tenor.com/foo.gif"]
             assert bot.photo_args == []
             assert 55 in bridge.msg_map
@@ -239,7 +239,7 @@ class TestDeliverMessage:
         m["message"] = '<img src="https://x.com/a.GIF?token=abc&v=1">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.animation_args == ["https://x.com/a.GIF?token=abc&v=1"]
         finally:
             await bridge.close()
@@ -260,7 +260,7 @@ class TestDeliverMessage:
         m["message"] = f'<img src="{proxy_url}">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.animation_args == [proxy_url]
             assert bot.photo_args == []
         finally:
@@ -278,7 +278,7 @@ class TestDeliverMessage:
         m["message"] = '<img src="https://shop.com/.gifts/promo.png">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.photo_args == ["https://shop.com/.gifts/promo.png"]
             assert bot.animation_args == []
         finally:
@@ -296,7 +296,7 @@ class TestDeliverMessage:
         m["message"] = '<img src="https://i.imgur.com/a.png">'
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.photo_args == ["https://i.imgur.com/a.png"]
             assert bot.animation_args == []
         finally:
@@ -308,7 +308,7 @@ class TestDeliverMessage:
         m = self._msg(320700)
         try:
             bridge.enqueue_message(m)
-            await deliver_message(FakeApp(bridge, bot), m)
+            await deliver_message(bridge, FakeApp(bridge, bot), None, m)
             assert bot.calls == 2
             assert not bridge.msg_map
             assert 320700 in bridge.queued_ids
