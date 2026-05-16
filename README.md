@@ -371,6 +371,24 @@ mkdir -p cookies
 docker compose up -d
 ```
 
+#### Com Signal habilitado
+
+O sidecar `signal-cli-rest-api` está num **profile opcional** (`signal`), então só sobe se você pedir. Pra rodar com Signal:
+
+```bash
+docker compose --profile signal up -d
+```
+
+Dentro do container, o unitedgram acessa o sidecar pelo hostname `signal-cli` (DNS do Compose), então use no `.env`:
+
+```env
+SIGNAL_API_URL="http://signal-cli:8080"
+```
+
+(Quando rodando o bot fora do Docker e o sidecar dentro, use `http://localhost:8080`.)
+
+**Vinculação do dispositivo Signal (one-time)**: após o sidecar subir, abra `http://localhost:8080/v1/qrcodelink?device_name=unitedgram` no navegador e escaneie o QR no Signal mobile (Settings → Linked devices). Os dados de identidade ficam persistidos em `./signal-cli-data`.
+
 Para ver os logs em tempo real:
 
 ```bash

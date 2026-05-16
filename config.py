@@ -34,6 +34,7 @@ settings = SimpleNamespace(
     imgbb_msg_expiration_seconds=43200,
     enable_telegram=True,
     enable_discord=False,
+    enable_signal=False,
 )
 
 _initialized = False
@@ -92,4 +93,5 @@ def setup() -> None:
     settings.imgbb_msg_expiration_seconds = _envint("IMGBB_MSG_EXPIRATION_SECONDS", 43200)
     settings.enable_telegram = _envbool("ENABLE_TELEGRAM", True)
     settings.enable_discord = _envbool("ENABLE_DISCORD", False)
+    settings.enable_signal = _envbool("ENABLE_SIGNAL", False)
     _initialized = True

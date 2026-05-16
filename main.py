@@ -18,6 +18,7 @@ from telegram.ext import (
 from bridge import ChatBridge
 from config import settings
 from discord_handlers import DiscordBot
+from signal_handlers import SignalBot
 from site_listener import (
     cookie_health_probe,
     heartbeat,
@@ -59,6 +60,7 @@ async def main():
         await initial_backfill(bridge)
 
         ds_bot = None
+        sig_bot = None
         tasks: list[asyncio.Task] = []
         if settings.enable_discord:
             ds_token = os.getenv("DISCORD_BOT_TOKEN")
@@ -68,8 +70,12 @@ async def main():
             else:
                 logger.warning("DISCORD_BOT_TOKEN não configurado, pulando Discord.")
 
+        if settings.enable_signal:
+            sig_bot = SignalBot(bridge)
+            tasks.append(asyncio.create_task(sig_bot.start()))
+
         tasks.extend([
-            asyncio.create_task(message_worker(bridge, app, ds_bot)),
+            asyncio.create_task(message_worker(bridge, app, ds_bot, sig_bot)),
             asyncio.create_task(run_websocket(bridge, app)),
             asyncio.create_task(heartbeat(bridge)),
             asyncio.create_task(cookie_health_probe(bridge, app)),
@@ -81,6 +87,9 @@ async def main():
 
         if ds_bot:
             logger.info("🤖 Bot Discord Rodando...")
+
+        if sig_bot:
+            logger.info("🤖 Bot Signal Rodando...")
 
         logger.info("🚀 Unitedgram iniciado (modo WebSocket)...")
         try:
@@ -101,6 +110,8 @@ async def main():
                     await app.shutdown()
                 if ds_bot:
                     await ds_bot.close()
+                if sig_bot:
+                    await sig_bot.close()
             except Exception as e:
                 logger.warning(f"Erro no shutdown dos bots: {e}")
 

@@ -3,7 +3,7 @@ import re
 
 from config import settings
 
-__all__ = ["format_telegram_message", "format_discord_message", "build_bbcode_payload"]
+__all__ = ["format_telegram_message", "format_discord_message", "format_signal_message", "build_bbcode_payload"]
 
 _RE_NEW = re.compile(
     r"\[quote=(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?",
@@ -215,6 +215,69 @@ def format_discord_body(bridge, raw_text: str) -> str:
             return f"citou {to_user_disp}:\n{quoted_format}"
 
     return tag_aliases(bridge, raw_text)
+
+
+def format_signal_message(bridge, msg_data: dict) -> str:
+    from bridge import clean_html
+
+    user = msg_data.get("user") or {}
+    username = user.get("username") or user.get("name") or "Desconhecido"
+
+    username_clean = username.lower().lstrip("@")
+    is_me = username_clean in bridge.aliases
+
+    display_name = "Você" if is_me else username
+
+    raw_text = clean_html(msg_data.get("message") or "")
+
+    if not raw_text.strip():
+        return f"💬 {display_name} enviou:"
+
+    to_user = None
+    quoted = ""
+    reply_txt = ""
+
+    m_new = _RE_NEW.search(raw_text)
+    m_bb_quote = _RE_BB_QUOTE.search(raw_text)
+
+    if m_new:
+        to_user = m_new.group("to")
+        quoted = m_new.group("quoted")
+        reply_txt = m_new.group("reply")
+    elif m_bb_quote:
+        to_user = m_bb_quote.group("to")
+        quoted = m_bb_quote.group("quoted")
+        reply_txt = m_bb_quote.group("reply")
+    else:
+        m_raw = _RE_RAW.match(raw_text)
+        if m_raw:
+            to_user = m_raw.group("to")
+            rest = m_raw.group(2).strip()
+            if "\n\n" in rest:
+                parts = _RE_BLANKLINE.split(rest, maxsplit=1)
+                quoted = parts[0]
+                reply_txt = parts[1]
+            else:
+                quoted = rest
+                reply_txt = ""
+        else:
+            m_old = _RE_OLD.match(raw_text)
+            if m_old:
+                to_user = m_old.group("to")
+                quoted = m_old.group("quoted")
+                reply_txt = m_old.group("reply")
+
+    if to_user is not None:
+        to_user_disp = to_user.strip()
+        quoted_text = tag_aliases(bridge, (quoted or "").strip())
+        quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
+        reply_format = tag_aliases(bridge, (reply_txt or "").strip())
+
+        if reply_format:
+            return f"💬 {display_name} respondeu a {to_user_disp}:\n{quoted_format}\n{reply_format}"
+        return f"💬 {display_name} citou {to_user_disp}:\n{quoted_format}"
+
+    return f"💬 {display_name}: {tag_aliases(bridge, raw_text)}"
 
 
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:

@@ -21,7 +21,7 @@ from telegram.ext import Application
 
 from bridge import clean_html
 from config import settings
-from formatting import format_discord_body, format_discord_message, format_telegram_message
+from formatting import format_discord_body, format_discord_message, format_signal_message, format_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ async def _send_fallback_text(app: Application, bridge, raw_html: str):
     )
 
 
-async def deliver_message(bridge, app: Application, discord_bot, m: dict):
+async def deliver_message(bridge, app: Application, discord_bot, m: dict, signal_bot=None):
     site_id = int(m.get("id", 0))
     raw_html = m.get('message') or ""
     img_urls = bridge._extract_all_image_urls(raw_html)
@@ -243,12 +243,21 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
         except Exception as e:
             logger.error(f"Erro enviando msg {site_id} p/ Discord: {e}")
 
+    sent_msg_sig_ts = None
+    if settings.enable_signal and signal_bot:
+        try:
+            sent_msg_sig_ts = await signal_bot.send_site_message(bridge, m, images)
+        except Exception as e:
+            logger.error(f"Erro enviando msg {site_id} p/ Signal: {e}")
+
     if sent_msg_tg:
         bridge._cache_message(sent_msg_tg.message_id, m)
     if sent_msg_ds_id:
         bridge._cache_message(sent_msg_ds_id, m)
+    if sent_msg_sig_ts:
+        bridge._cache_message(sent_msg_sig_ts, m)
 
-    if not sent_msg_tg and not sent_msg_ds_id and transient_failure:
+    if not sent_msg_tg and not sent_msg_ds_id and not sent_msg_sig_ts and transient_failure:
         # Libera o ID do dedup pra um reconcile via HTTP poder recuperar a msg.
         bridge.queued_ids.pop(site_id, None)
         logger.error(f"deliver_message {site_id}: não entregue (erro transitório) — ID liberado p/ reconcile")
@@ -256,11 +265,11 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
         logger.error(f"deliver_message {site_id}: não entregue (erro permanente) — descartada")
 
 
-async def message_worker(bridge, app: Application, discord_bot=None):
+async def message_worker(bridge, app: Application, discord_bot=None, signal_bot=None):
     while True:
         m = await bridge.msg_queue.get()
         try:
-            await deliver_message(bridge, app, discord_bot, m)
+            await deliver_message(bridge, app, discord_bot, m, signal_bot)
         except Exception as e:
             logger.error(f"Worker error: {e}")
         finally:

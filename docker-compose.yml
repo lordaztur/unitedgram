@@ -11,3 +11,15 @@ services:
       - ./avatar_cache.json:/app/avatar_cache.json
       - ./cookies:/app/cookies
     command: ["python", "main.py"]
+
+  signal-cli:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: unitedgram-signal-cli
+    restart: unless-stopped
+    profiles: ["signal"]
+    environment:
+      - MODE=native
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./signal-cli-data:/home/.local/share/signal-cli
