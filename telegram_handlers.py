@@ -123,7 +123,5 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else: payload = final_text
 
     if await bridge.send_message(payload):
-        confirm = await update.message.reply_text("✅")
-        await asyncio.sleep(2)
-        try: await update.message.delete(); await confirm.delete()
+        try: await update.message.delete()
         except: pass

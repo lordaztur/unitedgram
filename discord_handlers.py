@@ -80,15 +80,8 @@ class DiscordBot(commands.Bot):
                 payload = build_bbcode_payload(self.bridge.msg_map[orig_msg_id], final_text)
 
         if await self.bridge.send_message(payload):
-            try:
-                # Opcional: Reagir com check para confirmar envio
-                await message.add_reaction("✅")
-                # No Telegram ele apaga a mensagem e a confirmação após 2s.
-                # No Discord talvez seja melhor deixar, ou apagar também.
-                await asyncio.sleep(2)
-                await message.remove_reaction("✅", self.user)
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                await message.delete()
         else:
             with contextlib.suppress(Exception):
                 await message.add_reaction("❌")
