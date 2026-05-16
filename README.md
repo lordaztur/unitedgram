@@ -3,30 +3,32 @@
 </p>
 
 <p align="center">
-  <b>Ponte bidirecional em tempo real entre <code>UNIT3D</code> e <code>Telegram</code>.</b>
+  <b>Ponte bidirecional em tempo real entre <code>UNIT3D</code>, <code>Telegram</code> e <code>Discord</code>.</b>
 </p>
 
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot_API-2CA5E0?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
+[![Discord](https://img.shields.io/badge/Discord-Bot_API-2CA5E0?logo=discord&logoColor=white)](https://discord.com/developers/)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-EIO_v3-010101?logo=socketdotio&logoColor=white)](https://socket.io/)
 
 </p>
 
-Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um grupo/tópico do **Telegram**. Você lê e responde o shoutbox do tracker direto do Telegram, sem abrir o navegador.
+Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plataformas de mensagens (**Telegram** e/ou **Discord**). Você lê e responde o shoutbox do tracker direto dos seus apps favoritos, de forma totalmente flexível e simultânea.
 
 ---
 
 ## ✨ O que ele faz
 
-- 💬 **Mensagens do site → Telegram** em tempo real (via WebSocket)
-- 📤 **Mensagens do Telegram → site** (com suporte a BBCode, imagens e replies)
-- 🖼️ **Imagens nos dois sentidos** — site usa imgbb pra hospedar uploads do Telegram
-- 👤 **Avatar do remetente** como preview no Telegram (cache persistente, invalidação por hash)
-- 👥 **`/online`** mostra quem está no chat agora (presença em tempo real)
-- 🧵 **Threading de respostas** preservado entre os dois lados
-- 🗑️ **Botão de deletar** nas suas próprias mensagens (apaga em ambos)
+- 💬 **Mensagens do site → Bots** em tempo real (via WebSocket)
+- 📤 **Mensagens dos Bots → site** (suporte a BBCode, imagens e replies em ambas as plataformas)
+- 🖼️ **Imagens bidirecionais** — suporte a upload via ImgBB para anexos vindos do Telegram/Discord
+- 👤 **Avatares Premium** — No Telegram (via ImgBB) e Discord (Embeds nativos com suporte a **GIFs animados**)
+- 👥 **`/online`** (Telegram) ou `!online` (Discord) mostra quem está no chat agora
+- 🧵 **Threading de respostas** preservado entre todas as pontas
+- 🗑️ **Botão de deletar** (Telegram) — apaga a mensagem em todos os lugares
+- 🔌 **Arquitetura Flexível** — Rode apenas com Discord, apenas com Telegram ou ambos ao mesmo tempo
 - 🔔 **Menções a você** no site viram marcações no Telegram
 - 🚨 **Alerta automático** se a sessão/cookie do site expira
 - 💓 **Heartbeat + health check** pra debugar remotamente
@@ -38,10 +40,8 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um gr
 
 | Camada | Biblioteca | Pra quê |
 |---|---|---|
-| Bot Telegram | [`python-telegram-bot`](https://python-telegram-bot.org/) 22.x | API oficial |
-| HTTP async | [`httpx`](https://www.python-httpx.org/) | Chamadas ao site |
-| WebSocket | [`python-socketio`](https://python-socketio.readthedocs.io/) 4.x | Eventos em tempo real (EIO v3, Socket.IO 2.x) |
-| Parsing HTML | [`beautifulsoup4`](https://www.crummy.com/software/BeautifulSoup/) + `lxml` | Limpeza de HTML do shoutbox |
+| Bot Discord | [`discord.py`](https://discordpy.readthedocs.io/) 2.x | API oficial do Discord |
+| Imagens | [`Pillow`](https://python-pillow.org/) | Processamento e resize de avatares (incluindo GIFs) |
 | Config | [`python-dotenv`](https://github.com/theskumar/python-dotenv) | Carregar `.env` |
 | Testes | [`pytest`](https://docs.pytest.org/) + `pytest-asyncio` | Unit + async tests |
 
@@ -52,9 +52,8 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e um gr
 - � **Docker instalado** — necessário para rodar via container
 - 🐍 **Python 3.11+**
 - 🖥️ **Um computador que possa, de preferência, ficar ligado direto** (pra manter o chat funcionando)
-- 🤖 **Token de bot do Telegram** ([@BotFather](https://t.me/BotFather))
-- 🍪 **Conta ativa no tracker UNIT3D** (pra extrair cookies e CSRF)
-- 🖼️ **(Opcional) API key da [imgbb](https://api.imgbb.com/)** — grátis, pra hospedar imagens enviadas do Telegram
+- 🤖 **Token de bot do Telegram** (Opcional) ou **Bot do Discord** (Opcional)
+- 🖼️ **API key da [imgbb](https://api.imgbb.com/)** — Recomendada para avatares e envio de imagens
 
 ---
 
@@ -91,13 +90,20 @@ Edite `.env` preenchendo:
 
 > 🍪 **Cookies não vão no `.env`**. Salve um arquivo Netscape `cookies.txt` em `cookies/cookies.txt` — o bot lê de lá, refresca a sessão sozinho a cada 4h e descobre `USER_ID` e `CSRF_TOKEN` dinamicamente. Detalhes no passo abaixo.
 
-#### 💬 Telegram (obrigatórias)
-
+#### 💬 Telegram (Opcional)
 | Var | Onde pegar |
 |---|---|
+| `ENABLE_TELEGRAM` | `true` ou `false` |
 | `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) → `/newbot` |
-| `TELEGRAM_CHAT_ID` | Envie uma msg pro [@userinfobot](https://t.me/userinfobot) no grupo/chat; negativo pra grupos |
-| `TELEGRAM_TOPIC_ID` | (Opcional) ID do tópico se for supergrupo com tópicos |
+| `TELEGRAM_CHAT_ID` | ID do grupo ou chat |
+| `TELEGRAM_TOPIC_ID` | (Opcional) ID do tópico |
+
+#### 🎮 Discord (Opcional)
+| Var | Onde pegar |
+|---|---|
+| `ENABLE_DISCORD` | `true` ou `false` |
+| `DISCORD_BOT_TOKEN` | [Discord Developer Portal](https://discord.com/developers/applications) |
+| `DISCORD_CHANNEL_ID` | ID do canal de texto (botão direito no canal → Copiar ID) |
 
 #### 👤 Identidade (opcionais mas recomendadas)
 
@@ -105,6 +111,7 @@ Edite `.env` preenchendo:
 |---|---|
 | `MY_USERNAME` | Seu username no site (detecta suas mensagens) |
 | `TELEGRAM_USER` | Seu handle no Telegram (sem `@`) — menções viram tag clicável |
+| `DISCORD_USER_ID` | Seu ID numérico no Discord (para receber notificações/menções) |
 | `MY_ALIASES` | Outros apelidos pelos quais te chamam no chat, separados por vírgula |
 | `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site (imagens de mensagem se auto-deletam após **12h** no imgbb por padrão — configurável via `IMGBB_MSG_EXPIRATION_SECONDS`; avatares ficam permanentes) |
 
@@ -381,8 +388,14 @@ docker compose down
 | Comando | Função |
 |---|---|
 | `/ping` | Responde `pong 🏓`. Teste de sanidade. |
-| `/status` | Uptime, tamanho da queue, se WS tá conectado, contadores de cache. |
-| `/online` | Lista quem está no chat do site agora. Avisa se o WS está desconectado. |
+| `/status` | Uptime, status do WebSocket e contadores. |
+| `/online` | Lista quem está no chat do site agora. |
+
+## 🎮 Comandos no Discord
+| Comando | Função |
+|---|---|
+| `!ping` | Responde `pong 🏓`. |
+| `!online` | Lista quem está no chat do site agora. |
 
 E mensagens comuns no chat Telegram viram mensagens no shoutbox do site. Responder uma mensagem (reply do Telegram) vira uma citação BBCode automática.
 
@@ -448,4 +461,4 @@ Cobre: parsing de HTML, formatação de mensagens Telegram, extração de replie
 
 ## 📝 Licença
 
-[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright. 
+[MIT](./LICENSE) — use, modifique, distribua à vontade, só mantenha o aviso de copyright.

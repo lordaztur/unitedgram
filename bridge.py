@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import hashlib
 import http.cookiejar
+import io
 import json
 import logging
 import os
@@ -14,6 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+from PIL import Image
 
 from config import settings
 from formatting import build_bbcode_payload
@@ -28,13 +31,15 @@ __all__ = [
     "extract_reply_content",
 ]
 
-REQUIRED_ENV = ("BASE_URL", "WS_HOST", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")
+REQUIRED_ENV = ("BASE_URL", "WS_HOST")
 
 HTML_PARSER = "lxml"
 
 _IMG_429_BACKOFFS = (1, 3)
 
 AVATAR_CACHE_PATH = Path(__file__).parent / "avatar_cache.json"
+LOCAL_AVATAR_DIR = Path(__file__).parent / "avatars"
+LOCAL_AVATAR_DIR.mkdir(exist_ok=True)
 
 _RE_QUOTE_QUOTING = re.compile(
     r'^[“" ]*(?:Quoting|Citando)\s*@?([^\n:]+)(?::|\r?\n)\s*(.*)',
@@ -112,7 +117,7 @@ def _find_quote_nodes(soup) -> list:
     nodes = list(soup.find_all(['blockquote', 'q']))
     for div in soup.find_all('div'):
         if _has_quote_class(div):
-            nodes.append(div)
+            nodes.extend(div)
     return nodes
 
 
@@ -148,7 +153,11 @@ def _replace_quote_nodes_with_bbcode(nodes) -> None:
 
 def _soup_to_text(soup) -> str:
     for img in soup.find_all('img'):
-        img.decompose()
+        src = img.get("src")
+        if src:
+            img.replace_with(f" {src} ")
+        else:
+            img.decompose()
     for br in soup.find_all("br"):
         br.replace_with("\n")
     for p in soup.find_all(['p', 'div', 'li']):
@@ -157,7 +166,8 @@ def _soup_to_text(soup) -> str:
     lines = [line.strip(' \t\r') for line in text.split('\n')]
     text = "\n".join(lines)
     text = _RE_MULTI_BLANK.sub('\n\n', text)
-    return text.replace("[img]", "").replace("[/img]", "").strip()
+    text = re.sub(r"\[/?img(=[^\]]+)?\]", "", text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 def _collapse_nested_bbcode_quotes(text: str) -> str:
@@ -197,10 +207,12 @@ def extract_reply_content(text: str) -> str:
     text = text.replace("[*/quote]", "").replace("[* /quote]", "")
 
     m = _RE_REPLY_BBCODE.search(text)
-    if m: return (m.group(2) or "").strip()
+    if m:
+        return (m.group(2) or "").strip()
 
     m = _RE_REPLY_BB_QUOTE.search(text)
-    if m: return (m.group(2) or "").strip()
+    if m:
+        return (m.group(2) or "").strip()
 
     m = _RE_REPLY_QUOTING.match(text)
     if m:
@@ -211,7 +223,8 @@ def extract_reply_content(text: str) -> str:
         return ""
 
     m = _RE_REPLY_OLD.match(text)
-    if m: return m.group(1).strip()
+    if m:
+        return m.group(1).strip()
 
     return text
 
@@ -221,7 +234,7 @@ class BridgeConfig:
     base_url: str
     ws_host: str
     chatroom_id: int
-    tg_chat_id: int
+    tg_chat_id: Optional[int]
     tg_topic_id: Optional[int]
     imgbb_key: Optional[str]
     aliases: tuple
@@ -244,11 +257,23 @@ class BridgeConfig:
 
         topic = os.getenv("TELEGRAM_TOPIC_ID")
 
+        # Validação de plataformas
+        tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        tg_chat = os.getenv("TELEGRAM_CHAT_ID")
+        ds_token = os.getenv("DISCORD_BOT_TOKEN")
+        ds_channel = os.getenv("DISCORD_CHANNEL_ID")
+
+        has_tg = bool(tg_token and tg_chat)
+        has_ds = bool(ds_token and ds_channel)
+
+        if not has_tg and not has_ds:
+            raise RuntimeError("Nenhuma plataforma (Telegram ou Discord) configurada corretamente no .env!")
+
         return cls(
-            base_url=os.getenv("BASE_URL"),
-            ws_host=_compose_ws_host(os.getenv("WS_HOST"), os.getenv("WS_PORT", "8443")),
+            base_url=os.getenv("BASE_URL", ""),
+            ws_host=_compose_ws_host(os.getenv("WS_HOST", ""), os.getenv("WS_PORT", "8443")),
             chatroom_id=int(os.getenv("CHATROOM_ID", 1)),
-            tg_chat_id=int(os.getenv("TELEGRAM_CHAT_ID")),
+            tg_chat_id=int(tg_chat) if tg_chat else None,
             tg_topic_id=int(topic) if topic else None,
             imgbb_key=os.getenv("IMGBB_API_KEY"),
             aliases=aliases,
@@ -326,16 +351,18 @@ class ChatBridge:
         await self.upload_client.aclose()
 
     def _extract_all_image_urls(self, raw_html: str) -> list[str]:
-        if not raw_html: return []
+        if not raw_html:
+            return []
         soup = BeautifulSoup(raw_html, HTML_PARSER)
         urls = []
         for img in soup.find_all('img'):
             if 'joypixels' in (img.get('class') or []):
                 continue
             src = img.get('src')
-            if src:
+            if src and isinstance(src, str):
                 if not src.startswith("http"):
-                    if src.startswith("/"): src = src[1:]
+                    if src.startswith("/"):
+                        src = src[1:]
                     base = self.base_url if self.base_url.endswith("/") else self.base_url + "/"
                     src = base + src
                 urls.append(src)
@@ -368,7 +395,7 @@ class ChatBridge:
             await asyncio.sleep(wait)
         return None
 
-    async def upload_to_imgbb(self, image_data, ephemeral: bool = False) -> str:
+    async def upload_to_imgbb(self, image_data, ephemeral: bool = False, filename: str = "upload.jpg") -> str:
         if not self.imgbb_key:
             logger.error("IMGBB_API_KEY não configurada!")
             return ""
@@ -376,10 +403,7 @@ class ChatBridge:
             payload = {"key": self.imgbb_key}
             if ephemeral and settings.imgbb_msg_expiration_seconds > 0:
                 payload["expiration"] = str(settings.imgbb_msg_expiration_seconds)
-            if hasattr(image_data, 'read'):
-                files = {"image": image_data}
-            else:
-                files = {"image": ("telegram_upload.jpg", bytes(image_data))}
+            files = {"image": image_data} if hasattr(image_data, "read") else {"image": (filename, bytes(image_data))}
             resp = await self.upload_client.post("https://api.imgbb.com/1/upload", data=payload, files=files)
             if resp.status_code == 200:
                 return resp.json()['data']['url']
@@ -487,6 +511,86 @@ class ChatBridge:
         logger.info(f"avatar {action} p/ {label} (key={cache_key}): {public_url}")
         return public_url
 
+    async def get_discord_avatar(self, user: dict) -> tuple[Optional[bytes], str]:
+        """Retorna os bytes da imagem e a extensão (png ou gif)."""
+        if not user:
+            return None, "png"
+
+        username = user.get("username") or user.get("name")
+        if not username:
+            return None, "png"
+
+        user_id = user.get("id", 0)
+        has_custom_img = bool(user.get("image"))
+
+        # Tenta encontrar no cache (pode ser .png ou .gif)
+        for ext in ["png", "gif"]:
+            cache_path = LOCAL_AVATAR_DIR / f"{user_id}.{ext}"
+            if not has_custom_img:
+                cache_path = LOCAL_AVATAR_DIR / "default.png"
+                if cache_path.exists():
+                    return cache_path.read_bytes(), "png"
+
+            if cache_path.exists():
+                mtime = cache_path.stat().st_mtime
+                if (time.time() - mtime) < settings.avatar_revalidate_seconds:
+                    return cache_path.read_bytes(), ext
+
+        # URL da imagem
+        src = f"{self.base_url}/authenticated-images/user-avatars/{username}" if has_custom_img else f"{self.base_url}/img/profile.png"
+
+        # Download
+        data = await self.download_image(src)
+        if not data:
+            return cache_path.read_bytes() if cache_path.exists() else None
+
+        try:
+            # Detecta o formato original
+            with Image.open(io.BytesIO(data)) as img:
+                fmt = img.format
+
+                # Se for GIF, redimensionamos mantendo a animação
+                if fmt == "GIF":
+                    from PIL import ImageSequence
+
+                    frames = []
+                    duration = img.info.get("duration", 100)
+
+                    for frame in ImageSequence.Iterator(img):
+                        # Copia o frame e converte para manter transparência se houver
+                        new_frame = frame.copy().convert("RGBA")
+                        new_frame.thumbnail((48, 48), Image.Resampling.LANCZOS)
+                        frames.append(new_frame)
+
+                    if frames:
+                        out = io.BytesIO()
+                        # Salva todos os frames de volta como um GIF animado
+                        frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], loop=0, duration=duration, disposal=2)
+                        processed_data = out.getvalue()
+                        cache_path = LOCAL_AVATAR_DIR / f"{user_id}.gif"
+                        cache_path.write_bytes(processed_data)
+                        return processed_data, "gif"
+
+                # Para outros formatos, continuamos com o redimensionamento e conversão para PNG
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+
+                # Redimensiona (ex: 48x48)
+                img.thumbnail((48, 48), Image.Resampling.LANCZOS)
+
+                # Salva em um buffer e no arquivo
+                out = io.BytesIO()
+                img.save(out, format="PNG")
+                processed_data = out.getvalue()
+
+                # Salva no cache local
+                cache_path = LOCAL_AVATAR_DIR / f"{user_id}.png"
+                cache_path.write_bytes(processed_data)
+                return processed_data, "png"
+        except Exception as e:
+            logger.error(f"Erro ao processar avatar para Discord ({username}): {e}")
+            return None, "png"
+
     async def process_media_group_delayed(self, gid: str, bot):
         await asyncio.sleep(settings.album_wait_seconds)
         if gid not in self.media_buffer: return
@@ -514,8 +618,8 @@ class ChatBridge:
 
         if not final_text:
             if status_msg:
-                try: await status_msg.edit_text("❌ Falha no upload do álbum.")
-                except: pass
+                with contextlib.suppress(BaseException):
+                    await status_msg.edit_text("❌ Falha no upload do álbum.")
             return
 
         payload = final_text
@@ -524,22 +628,22 @@ class ChatBridge:
 
         if await self.send_message(payload):
             if status_msg:
-                try: await status_msg.edit_text("✅")
-                except: pass
+                with contextlib.suppress(BaseException):
+                    await status_msg.edit_text("✅")
                 await asyncio.sleep(2)
-                try: await status_msg.delete()
-                except: pass
+                with contextlib.suppress(BaseException):
+                    await status_msg.delete()
         else:
             if status_msg:
-                try: await status_msg.edit_text("❌ Erro envio site.")
-                except: pass
+                with contextlib.suppress(BaseException):
+                    await status_msg.edit_text("❌ Erro envio site.")
 
-    def _cache_message(self, tg_msg_id: int, site_msg_data: dict):
+    def _cache_message(self, msg_id: int, site_msg_data: dict):
         user = site_msg_data.get("user") or {}
         handle = user.get("username") or user.get("name") or f"user{user.get('id')}"
         clean_text = clean_html(site_msg_data.get("message") or "")
 
-        self.msg_map[tg_msg_id] = {
+        self.msg_map[msg_id] = {
             "site_id": int(site_msg_data.get("id", 0)),
             "handle": str(handle).strip(),
             "text": extract_reply_content(clean_text),

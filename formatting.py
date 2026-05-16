@@ -3,10 +3,10 @@ import re
 
 from config import settings
 
-__all__ = ["format_telegram_message", "build_bbcode_payload"]
+__all__ = ["format_telegram_message", "format_discord_message", "build_bbcode_payload"]
 
 _RE_NEW = re.compile(
-    r'\[quote=@?(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?',
+    r"\[quote=(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?",
     re.DOTALL | re.IGNORECASE,
 )
 _RE_BB_QUOTE = re.compile(
@@ -25,6 +25,22 @@ _RE_OLD = re.compile(
 _RE_BLANKLINE = re.compile(r'\n{2,}')
 
 
+def tag_aliases(bridge, text):
+    from config import settings
+
+    if not text or not bridge.aliases or not settings.tag_aliases:
+        return text
+
+    escaped_aliases = [re.escape(a) for a in bridge.aliases]
+    pattern = r"(?<!\w)@?(" + "|".join(escaped_aliases) + r")(?!\w)"
+
+    # Se tivermos o ID do usuário do Discord, usamos o formato de menção <@ID>
+    if settings.discord_user_id:
+        return re.sub(pattern, f"<@{settings.discord_user_id}>", text, flags=re.IGNORECASE)
+
+    return re.sub(pattern, r"\g<0>", text, flags=re.IGNORECASE)
+
+
 def format_telegram_message(bridge, msg_data: dict) -> str:
     from bridge import clean_html
 
@@ -38,7 +54,8 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
 
     raw_text = clean_html(msg_data.get("message") or "")
 
-    if not raw_text.strip(): return f"💬 <b>{display_name}</b> enviou:"
+    if not raw_text.strip():
+        return f"💬 <b>{display_name}</b> enviou:"
 
     to_user = None
     quoted = ""
@@ -86,10 +103,7 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
         to_user = to_user.strip()
         clean_to_user = to_user.lstrip("@")
 
-        if clean_to_user.lower() in bridge.aliases and settings.tag_aliases and settings.telegram_user:
-            to_user_disp = f"@{settings.telegram_user}"
-        else:
-            to_user_disp = html.escape(to_user)
+        to_user_disp = f"@{settings.telegram_user}" if clean_to_user.lower() in bridge.aliases and settings.tag_aliases and settings.telegram_user else html.escape(to_user)
 
         quoted_format = html.escape(tag_aliases(quoted or "").strip())
         reply_format = html.escape(tag_aliases(reply_txt or "").strip())
@@ -102,10 +116,112 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
     return f"💬 <b>{display_name}</b>: {html.escape(tag_aliases(raw_text))}"
 
 
+def format_discord_message(bridge, msg_data: dict) -> str:
+    from bridge import clean_html
+
+    user = msg_data.get("user") or {}
+    username = user.get("username") or user.get("name") or "Desconhecido"
+
+    username_clean = username.lower().lstrip("@")
+    is_me = username_clean in bridge.aliases
+
+    display_name = "**Você**" if is_me else f"**{username}**"
+
+    raw_text = clean_html(msg_data.get("message") or "")
+
+    if not raw_text.strip():
+        return f"💬 {display_name} enviou:"
+
+    to_user = None
+    quoted = ""
+    reply_txt = ""
+
+    m_new = _RE_NEW.search(raw_text)
+    m_bb_quote = _RE_BB_QUOTE.search(raw_text)
+
+    if m_new:
+        to_user = m_new.group("to")
+        quoted = m_new.group("quoted")
+        reply_txt = m_new.group("reply")
+    elif m_bb_quote:
+        to_user = m_bb_quote.group("to")
+        quoted = m_bb_quote.group("quoted")
+        reply_txt = m_bb_quote.group("reply")
+    else:
+        m_raw = _RE_RAW.match(raw_text)
+        if m_raw:
+            to_user = m_raw.group("to")
+            rest = m_raw.group(2).strip()
+            if "\n\n" in rest:
+                parts = _RE_BLANKLINE.split(rest, maxsplit=1)
+                quoted = parts[0]
+                reply_txt = parts[1]
+            else:
+                quoted = rest
+                reply_txt = ""
+        else:
+            m_old = _RE_OLD.match(raw_text)
+            if m_old:
+                to_user = m_old.group("to")
+                quoted = m_old.group("quoted")
+                reply_txt = m_old.group("reply")
+
+    if to_user is not None:
+        to_user_disp = f"**{to_user.strip()}**"
+
+        quoted_text = tag_aliases(bridge, quoted or "").strip()
+        # Discord blockquote: prefix each line with >
+        quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
+        reply_format = tag_aliases(bridge, reply_txt or "").strip()
+
+        if reply_format:
+            return f"{display_name} respondeu a {to_user_disp}:\n{quoted_format}\n{reply_format}"
+        else:
+            return f"{display_name} citou {to_user_disp}:\n{quoted_format}"
+
+    return f"{display_name}: {tag_aliases(bridge, raw_text)}"
+
+
+def format_discord_body(bridge, raw_text: str) -> str:
+    """Formata apenas o corpo da mensagem para o Discord (converte quotes, etc)."""
+    if not raw_text.strip():
+        return ""
+
+    to_user = None
+    quoted = ""
+    reply_txt = ""
+
+    m_new = _RE_NEW.search(raw_text)
+    m_bb_quote = _RE_BB_QUOTE.search(raw_text)
+
+    if m_new:
+        to_user = m_new.group("to")
+        quoted = m_new.group("quoted")
+        reply_txt = m_new.group("reply")
+    elif m_bb_quote:
+        to_user = m_bb_quote.group("to")
+        quoted = m_bb_quote.group("quoted")
+        reply_txt = m_bb_quote.group("reply")
+
+    if to_user is not None:
+        to_user_disp = f"**{to_user.strip()}**"
+        # Discord blockquote: prefix each line with >
+        quoted_text = tag_aliases(bridge, (quoted or "").strip())
+        quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
+
+        if reply_txt:
+            return f"respondeu a {to_user_disp}:\n{quoted_format}\n{tag_aliases(bridge, reply_txt.strip())}"
+        else:
+            return f"citou {to_user_disp}:\n{quoted_format}"
+
+    return tag_aliases(bridge, raw_text)
+
+
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:
     to_user = original_data.get("handle", "").lstrip("@")
     quoted_text = original_data.get("text", "")
-    if len(quoted_text) > 240: quoted_text = quoted_text[:240].rstrip() + "..."
+    if len(quoted_text) > 240:
+        quoted_text = quoted_text[:240].rstrip() + "..."
 
     for c, r in [("[", "［"), ("]", "］")]:
         to_user = to_user.replace(c, r)

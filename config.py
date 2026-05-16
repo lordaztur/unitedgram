@@ -12,6 +12,7 @@ LOG_PATH = Path(__file__).parent / "bot_bridge.log"
 
 settings = SimpleNamespace(
     telegram_user="",
+    discord_user_id="",
     backfill_count=10,
     http_timeout=30.0,
     upload_timeout=120.0,
@@ -31,6 +32,8 @@ settings = SimpleNamespace(
     show_user_avatars=True,
     avatar_revalidate_seconds=1800,
     imgbb_msg_expiration_seconds=43200,
+    enable_telegram=True,
+    enable_discord=False,
 )
 
 _initialized = False
@@ -67,6 +70,7 @@ def setup() -> None:
     )
     load_dotenv(dotenv_path=Path(__file__).parent / '.env')
     settings.telegram_user = os.getenv("TELEGRAM_USER", "")
+    settings.discord_user_id = os.getenv("DISCORD_USER_ID", "")
     settings.backfill_count = _envint("BACKFILL_COUNT", 10)
     settings.http_timeout = _envfloat("HTTP_TIMEOUT", 30.0)
     settings.upload_timeout = _envfloat("UPLOAD_TIMEOUT", 120.0)
@@ -86,4 +90,6 @@ def setup() -> None:
     settings.show_user_avatars = _envbool("SHOW_USER_AVATARS", True)
     settings.avatar_revalidate_seconds = _envint("AVATAR_REVALIDATE_SECONDS", 1800)
     settings.imgbb_msg_expiration_seconds = _envint("IMGBB_MSG_EXPIRATION_SECONDS", 43200)
+    settings.enable_telegram = _envbool("ENABLE_TELEGRAM", True)
+    settings.enable_discord = _envbool("ENABLE_DISCORD", False)
     _initialized = True
