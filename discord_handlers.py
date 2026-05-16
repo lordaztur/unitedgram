@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import logging
 import os
@@ -31,7 +30,6 @@ class DiscordBot(commands.Bot):
         if message.channel.id != self.channel_id:
             return
 
-        # Ignora comandos
         if message.content.startswith("!"):
             await self.process_commands(message)
             return
@@ -42,14 +40,11 @@ class DiscordBot(commands.Bot):
         if message.attachments and not self.bridge.imgbb_key:
             logger.warning("Anexo detectado no Discord, mas IMGBB_API_KEY não está configurada.")
 
-        # Processa anexos (imagens)
         if message.attachments:
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
                     try:
-                        # Baixa a imagem
                         img_bytes = await attachment.read()
-                        # Upload para o ImgBB
                         img_url = await self.bridge.upload_to_imgbb(img_bytes, ephemeral=True, filename=attachment.filename)
                         if img_url:
                             bbcode_img += f"[img]{img_url}[/img] "
@@ -67,14 +62,8 @@ class DiscordBot(commands.Bot):
 
         final_text = f"{text}\n{bbcode_img}".strip()
 
-        # Processa respostas (replies)
         payload = final_text
         if message.reference and message.reference.message_id:
-            # Tenta encontrar a mensagem original no map (se ela veio do site)
-            # Nota: O bot do Telegram usa o message_id do Telegram como chave no msg_map.
-            # No Discord, teríamos que fazer algo similar.
-            # Por enquanto, vamos ver se a mensagem respondida está no cache.
-            # TODO: Implementar cache compartilhado ou específico para Discord
             orig_msg_id = message.reference.message_id
             if orig_msg_id in self.bridge.msg_map:
                 payload = build_bbcode_payload(self.bridge.msg_map[orig_msg_id], final_text)
@@ -84,13 +73,12 @@ class DiscordBot(commands.Bot):
                 await message.delete()
         else:
             with contextlib.suppress(Exception):
-                await message.add_reaction("❌")
+                await message.add_reaction("👎")
 
     async def on_reaction_add(self, reaction, user):
         if user.bot:
             return
 
-        # Só processa se for a lixeira
         if str(reaction.emoji) != "🗑️":
             return
 
@@ -98,20 +86,16 @@ class DiscordBot(commands.Bot):
         if msg_id in self.bridge.msg_map:
             cached = self.bridge.msg_map[msg_id]
 
-            # Tenta deletar no site primeiro
             if await self.bridge.delete_message(cached["site_id"]):
-                # Se deletou no site, deleta no Discord também
                 try:
                     await reaction.message.delete()
                 except Exception as e:
                     logger.warning(f"Erro ao deletar msg no Discord: {e}")
             else:
-                # Se falhar (ex: não é dono da msg), remove a reação do usuário
                 with contextlib.suppress(BaseException):
                     await reaction.remove(user)
 
     async def setup_hook(self):
-        # Comandos simples
         @self.command()
         async def ping(ctx):
             await ctx.send("pong 🏓")
