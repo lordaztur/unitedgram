@@ -38,6 +38,7 @@ HTML_PARSER = "lxml"
 _IMG_429_BACKOFFS = (1, 3)
 
 AVATAR_CACHE_PATH = Path(__file__).parent / "avatar_cache.json"
+DISCORD_AVATAR_CACHE_PATH = Path(__file__).parent / "discord_avatar_cache.json"
 LOCAL_AVATAR_DIR = Path(__file__).parent / "avatars"
 LOCAL_AVATAR_DIR.mkdir(exist_ok=True)
 
@@ -332,6 +333,7 @@ class ChatBridge:
         self.ws_connected = asyncio.Event()
 
         self.avatar_cache: dict[int, dict[str, Any]] = self._load_avatar_cache()
+        self.discord_avatar_cache: dict[int, dict[str, str]] = self._load_discord_avatar_cache()
         self.online: dict[int, str] = {}
 
     @classmethod
@@ -445,6 +447,30 @@ class ChatBridge:
         except OSError as e:
             logger.warning(f"avatar_cache: falha ao salvar: {e}")
 
+    def _load_discord_avatar_cache(self) -> dict[int, dict[str, str]]:
+        try:
+            with open(DISCORD_AVATAR_CACHE_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+            result: dict[int, dict[str, str]] = {}
+            for k, v in raw.items():
+                if isinstance(v, dict) and "hash" in v and "ext" in v:
+                    result[int(k)] = {"hash": str(v["hash"]), "ext": str(v["ext"])}
+            return result
+        except FileNotFoundError:
+            return {}
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.warning(f"discord_avatar_cache: corrompido ({e}); começando vazio")
+            return {}
+
+    def _save_discord_avatar_cache(self) -> None:
+        tmp = DISCORD_AVATAR_CACHE_PATH.with_suffix(".json.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({str(k): v for k, v in self.discord_avatar_cache.items()}, f)
+            tmp.replace(DISCORD_AVATAR_CACHE_PATH)
+        except OSError as e:
+            logger.warning(f"discord_avatar_cache: falha ao salvar: {e}")
+
     def seed_online(self, members: list) -> None:
         self.online.clear()
         for m in members or []:
@@ -512,7 +538,6 @@ class ChatBridge:
         return public_url
 
     async def get_discord_avatar(self, user: dict) -> tuple[Optional[bytes], str]:
-        """Retorna os bytes da imagem e a extensão (png ou gif)."""
         if not user:
             return None, "png"
 
@@ -520,73 +545,78 @@ class ChatBridge:
         if not username:
             return None, "png"
 
-        user_id = user.get("id", 0)
+        try:
+            user_id = int(user.get("id", 0))
+        except (TypeError, ValueError):
+            return None, "png"
+
         has_custom_img = bool(user.get("image"))
+        cache_key = user_id if has_custom_img else 0
+        cached_entry = self.discord_avatar_cache.get(cache_key)
 
-        # Tenta encontrar no cache (pode ser .png ou .gif)
-        for ext in ["png", "gif"]:
-            cache_path = LOCAL_AVATAR_DIR / f"{user_id}.{ext}"
-            if not has_custom_img:
-                cache_path = LOCAL_AVATAR_DIR / "default.png"
-                if cache_path.exists():
-                    return cache_path.read_bytes(), "png"
-
+        if cached_entry:
+            cached_ext = cached_entry.get("ext", "png")
+            cache_path = LOCAL_AVATAR_DIR / f"{cache_key}.{cached_ext}"
             if cache_path.exists():
                 mtime = cache_path.stat().st_mtime
                 if (time.time() - mtime) < settings.avatar_revalidate_seconds:
-                    return cache_path.read_bytes(), ext
+                    return cache_path.read_bytes(), cached_ext
 
-        # URL da imagem
         src = f"{self.base_url}/authenticated-images/user-avatars/{username}" if has_custom_img else f"{self.base_url}/img/profile.png"
-
-        # Download
         data = await self.download_image(src)
         if not data:
-            return cache_path.read_bytes() if cache_path.exists() else None
+            if cached_entry:
+                cached_ext = cached_entry.get("ext", "png")
+                cache_path = LOCAL_AVATAR_DIR / f"{cache_key}.{cached_ext}"
+                if cache_path.exists():
+                    return cache_path.read_bytes(), cached_ext
+            return None, "png"
+
+        new_hash = hashlib.sha1(data).hexdigest()
+        if cached_entry and cached_entry.get("hash") == new_hash:
+            cached_ext = cached_entry.get("ext", "png")
+            cache_path = LOCAL_AVATAR_DIR / f"{cache_key}.{cached_ext}"
+            if cache_path.exists():
+                cache_path.touch()
+                return cache_path.read_bytes(), cached_ext
 
         try:
-            # Detecta o formato original
             with Image.open(io.BytesIO(data)) as img:
                 fmt = img.format
-
-                # Se for GIF, redimensionamos mantendo a animação
                 if fmt == "GIF":
                     from PIL import ImageSequence
-
                     frames = []
                     duration = img.info.get("duration", 100)
-
                     for frame in ImageSequence.Iterator(img):
-                        # Copia o frame e converte para manter transparência se houver
                         new_frame = frame.copy().convert("RGBA")
                         new_frame.thumbnail((48, 48), Image.Resampling.LANCZOS)
                         frames.append(new_frame)
-
                     if frames:
                         out = io.BytesIO()
-                        # Salva todos os frames de volta como um GIF animado
                         frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], loop=0, duration=duration, disposal=2)
                         processed_data = out.getvalue()
-                        cache_path = LOCAL_AVATAR_DIR / f"{user_id}.gif"
-                        cache_path.write_bytes(processed_data)
-                        return processed_data, "gif"
+                        new_ext = "gif"
+                    else:
+                        return None, "png"
+                else:
+                    if img.mode != "RGBA":
+                        img = img.convert("RGBA")
+                    img.thumbnail((48, 48), Image.Resampling.LANCZOS)
+                    out = io.BytesIO()
+                    img.save(out, format="PNG")
+                    processed_data = out.getvalue()
+                    new_ext = "png"
 
-                # Para outros formatos, continuamos com o redimensionamento e conversão para PNG
-                if img.mode != "RGBA":
-                    img = img.convert("RGBA")
+            if cached_entry and cached_entry.get("ext") and cached_entry["ext"] != new_ext:
+                (LOCAL_AVATAR_DIR / f"{cache_key}.{cached_entry['ext']}").unlink(missing_ok=True)
 
-                # Redimensiona (ex: 48x48)
-                img.thumbnail((48, 48), Image.Resampling.LANCZOS)
-
-                # Salva em um buffer e no arquivo
-                out = io.BytesIO()
-                img.save(out, format="PNG")
-                processed_data = out.getvalue()
-
-                # Salva no cache local
-                cache_path = LOCAL_AVATAR_DIR / f"{user_id}.png"
-                cache_path.write_bytes(processed_data)
-                return processed_data, "png"
+            cache_path = LOCAL_AVATAR_DIR / f"{cache_key}.{new_ext}"
+            cache_path.write_bytes(processed_data)
+            self.discord_avatar_cache[cache_key] = {"hash": new_hash, "ext": new_ext}
+            self._save_discord_avatar_cache()
+            action = "atualizado" if cached_entry else "cacheado"
+            logger.info(f"avatar Discord {action} p/ {username} (key={cache_key}, ext={new_ext})")
+            return processed_data, new_ext
         except Exception as e:
             logger.error(f"Erro ao processar avatar para Discord ({username}): {e}")
             return None, "png"
