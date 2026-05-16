@@ -50,7 +50,7 @@ class DiscordBot(commands.Bot):
                         # Baixa a imagem
                         img_bytes = await attachment.read()
                         # Upload para o ImgBB
-                        img_url = await self.bridge.upload_to_imgbb(img_bytes, filename=attachment.filename)
+                        img_url = await self.bridge.upload_to_imgbb(img_bytes, ephemeral=True, filename=attachment.filename)
                         if img_url:
                             bbcode_img += f"[img]{img_url}[/img] "
                         else:
