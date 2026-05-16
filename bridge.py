@@ -117,7 +117,7 @@ def _find_quote_nodes(soup) -> list:
     nodes = list(soup.find_all(['blockquote', 'q']))
     for div in soup.find_all('div'):
         if _has_quote_class(div):
-            nodes.extend(div)
+            nodes.append(div)
     return nodes
 
 
