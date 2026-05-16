@@ -223,17 +223,25 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     embed.set_author(name=m_username if m_username else "Sistema", icon_url=f"attachment://avatar.{ext}")
 
                     msg_ds = await channel.send(file=file, embed=embed)
+                    if is_me and settings.show_delete_button:
+                        try:
+                            await msg_ds.add_reaction("🗑️")
+                        except:
+                            pass
                 else:
                     msg_ds = await channel.send(text_ds)
+                    if is_me and settings.show_delete_button:
+                        try:
+                            await msg_ds.add_reaction("🗑️")
+                        except:
+                            pass
                 sent_msg_ds_id = msg_ds.id
         except Exception as e:
             logger.error(f"Erro enviando msg {site_id} p/ Discord: {e}")
 
     if sent_msg_tg:
         bridge._cache_message(sent_msg_tg.message_id, m)
-
     if sent_msg_ds_id:
-        # Também cacheia o ID do Discord para que replies funcionem lá
         bridge._cache_message(sent_msg_ds_id, m)
 
     if not sent_msg_tg and not sent_msg_ds_id and transient_failure:

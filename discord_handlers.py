@@ -98,6 +98,32 @@ class DiscordBot(commands.Bot):
             except Exception:
                 pass
 
+    async def on_reaction_add(self, reaction, user):
+        if user.bot:
+            return
+
+        # Só processa se for a lixeira
+        if str(reaction.emoji) != "🗑️":
+            return
+
+        msg_id = reaction.message.id
+        if msg_id in self.bridge.msg_map:
+            cached = self.bridge.msg_map[msg_id]
+
+            # Tenta deletar no site primeiro
+            if await self.bridge.delete_message(cached["site_id"]):
+                # Se deletou no site, deleta no Discord também
+                try:
+                    await reaction.message.delete()
+                except Exception as e:
+                    logger.warning(f"Erro ao deletar msg no Discord: {e}")
+            else:
+                # Se falhar (ex: não é dono da msg), remove a reação do usuário
+                try:
+                    await reaction.remove(user)
+                except:
+                    pass
+
     async def setup_hook(self):
         # Comandos simples
         @self.command()

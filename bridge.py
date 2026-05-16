@@ -636,12 +636,12 @@ class ChatBridge:
                 except:
                     pass
 
-    def _cache_message(self, tg_msg_id: int, site_msg_data: dict):
+    def _cache_message(self, msg_id: int, site_msg_data: dict):
         user = site_msg_data.get("user") or {}
         handle = user.get("username") or user.get("name") or f"user{user.get('id')}"
         clean_text = clean_html(site_msg_data.get("message") or "")
 
-        self.msg_map[tg_msg_id] = {
+        self.msg_map[msg_id] = {
             "site_id": int(site_msg_data.get("id", 0)),
             "handle": str(handle).strip(),
             "text": extract_reply_content(clean_text),
