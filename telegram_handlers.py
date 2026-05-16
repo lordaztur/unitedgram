@@ -125,3 +125,6 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await bridge.send_message(payload):
         try: await update.message.delete()
         except: pass
+    else:
+        try: await update.message.set_reaction("👎")
+        except: pass
