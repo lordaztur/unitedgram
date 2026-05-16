@@ -25,6 +25,22 @@ _RE_OLD = re.compile(
 _RE_BLANKLINE = re.compile(r'\n{2,}')
 
 
+def tag_aliases(bridge, text):
+    from config import settings
+
+    if not text or not bridge.aliases or not settings.tag_aliases:
+        return text
+
+    escaped_aliases = [re.escape(a) for a in bridge.aliases]
+    pattern = r"(?<!\w)@?(" + "|".join(escaped_aliases) + r")(?!\w)"
+
+    # Se tivermos o ID do usuário do Discord, usamos o formato de menção <@ID>
+    if settings.discord_user_id:
+        return re.sub(pattern, f"<@{settings.discord_user_id}>", text, flags=re.IGNORECASE)
+
+    return re.sub(pattern, r"\g<0>", text, flags=re.IGNORECASE)
+
+
 def format_telegram_message(bridge, msg_data: dict) -> str:
     from bridge import clean_html
 
@@ -152,30 +168,20 @@ def format_discord_message(bridge, msg_data: dict) -> str:
                 quoted = m_old.group("quoted")
                 reply_txt = m_old.group("reply")
 
-    def tag_aliases(text):
-        if not text or not bridge.aliases or not settings.tag_aliases:
-            return text
-        # No Discord, talvez não façamos o mesmo tipo de tag de usuário do Telegram
-        # mas podemos manter a lógica de alias se o usuário quiser.
-        # Por simplicidade, vamos manter igual mas sem o [@handle] específico do TG se não for configurado.
-        escaped_aliases = [re.escape(a) for a in bridge.aliases]
-        pattern = r"(?<!\w)@?(" + "|".join(escaped_aliases) + r")(?!\w)"
-        return re.sub(pattern, r"\g<0>", text, flags=re.IGNORECASE)
-
     if to_user is not None:
         to_user_disp = f"**{to_user.strip()}**"
 
-        quoted_text = tag_aliases(quoted or "").strip()
+        quoted_text = tag_aliases(bridge, quoted or "").strip()
         # Discord blockquote: prefix each line with >
         quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
-        reply_format = tag_aliases(reply_txt or "").strip()
+        reply_format = tag_aliases(bridge, reply_txt or "").strip()
 
         if reply_format:
             return f"{display_name} respondeu a {to_user_disp}:\n{quoted_format}\n{reply_format}"
         else:
             return f"{display_name} citou {to_user_disp}:\n{quoted_format}"
 
-    return f"{display_name}: {tag_aliases(raw_text)}"
+    return f"{display_name}: {tag_aliases(bridge, raw_text)}"
 
 
 def format_discord_body(bridge, raw_text: str) -> str:
@@ -202,14 +208,15 @@ def format_discord_body(bridge, raw_text: str) -> str:
     if to_user is not None:
         to_user_disp = f"**{to_user.strip()}**"
         # Discord blockquote: prefix each line with >
-        quoted_format = "\n".join(f"> {line}" for line in (quoted or "").strip().split("\n"))
+        quoted_text = tag_aliases(bridge, (quoted or "").strip())
+        quoted_format = "\n".join(f"> {line}" for line in quoted_text.split("\n"))
 
         if reply_txt:
-            return f"respondeu a {to_user_disp}:\n{quoted_format}\n{reply_txt.strip()}"
+            return f"respondeu a {to_user_disp}:\n{quoted_format}\n{tag_aliases(bridge, reply_txt.strip())}"
         else:
             return f"citou {to_user_disp}:\n{quoted_format}"
 
-    return raw_text
+    return tag_aliases(bridge, raw_text)
 
 
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:

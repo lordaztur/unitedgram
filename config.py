@@ -12,6 +12,7 @@ LOG_PATH = Path(__file__).parent / "bot_bridge.log"
 
 settings = SimpleNamespace(
     telegram_user="",
+    discord_user_id="",
     backfill_count=10,
     http_timeout=30.0,
     upload_timeout=120.0,
@@ -68,6 +69,7 @@ def setup() -> None:
     )
     load_dotenv(dotenv_path=Path(__file__).parent / '.env')
     settings.telegram_user = os.getenv("TELEGRAM_USER", "")
+    settings.discord_user_id = os.getenv("DISCORD_USER_ID", "")
     settings.backfill_count = _envint("BACKFILL_COUNT", 10)
     settings.http_timeout = _envfloat("HTTP_TIMEOUT", 30.0)
     settings.upload_timeout = _envfloat("UPLOAD_TIMEOUT", 120.0)

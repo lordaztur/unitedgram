@@ -501,32 +501,30 @@ class ChatBridge:
         logger.info(f"avatar {action} p/ {label} (key={cache_key}): {public_url}")
         return public_url
 
-    async def get_discord_avatar(self, user: dict) -> Optional[bytes]:
-        """Retorna os bytes da imagem do usuário convertida para PNG e redimensionada."""
+    async def get_discord_avatar(self, user: dict) -> tuple[Optional[bytes], str]:
+        """Retorna os bytes da imagem e a extensão (png ou gif)."""
         if not user:
-            return None
+            return None, "png"
 
         username = user.get("username") or user.get("name")
         if not username:
-            return None
+            return None, "png"
 
         user_id = user.get("id", 0)
         has_custom_img = bool(user.get("image"))
 
-        # Define o arquivo de cache local
-        cache_filename = f"{user_id}.png" if has_custom_img else "default.png"
-        cache_path = LOCAL_AVATAR_DIR / cache_filename
-
-        # Se já existe no cache, verifica se precisamos revalidar
-        if cache_path.exists():
-            # Por simplicidade, vamos usar o mesmo intervalo do Telegram para revalidação
-            # Se for a imagem padrão, não precisa revalidar quase nunca
+        # Tenta encontrar no cache (pode ser .png ou .gif)
+        for ext in ["png", "gif"]:
+            cache_path = LOCAL_AVATAR_DIR / f"{user_id}.{ext}"
             if not has_custom_img:
-                return cache_path.read_bytes()
+                cache_path = LOCAL_AVATAR_DIR / "default.png"
+                if cache_path.exists():
+                    return cache_path.read_bytes(), "png"
 
-            mtime = cache_path.stat().st_mtime
-            if (time.time() - mtime) < settings.avatar_revalidate_seconds:
-                return cache_path.read_bytes()
+            if cache_path.exists():
+                mtime = cache_path.stat().st_mtime
+                if (time.time() - mtime) < settings.avatar_revalidate_seconds:
+                    return cache_path.read_bytes(), ext
 
         # URL da imagem
         src = f"{self.base_url}/authenticated-images/user-avatars/{username}" if has_custom_img else f"{self.base_url}/img/profile.png"
@@ -537,14 +535,38 @@ class ChatBridge:
             return cache_path.read_bytes() if cache_path.exists() else None
 
         try:
-            # Processamento com Pillow
+            # Detecta o formato original
             with Image.open(io.BytesIO(data)) as img:
-                # Converte para RGBA se necessário (para PNG)
+                fmt = img.format
+
+                # Se for GIF, redimensionamos mantendo a animação
+                if fmt == "GIF":
+                    from PIL import ImageSequence
+
+                    frames = []
+                    duration = img.info.get("duration", 100)
+
+                    for frame in ImageSequence.Iterator(img):
+                        # Copia o frame e converte para manter transparência se houver
+                        new_frame = frame.copy().convert("RGBA")
+                        new_frame.thumbnail((48, 48), Image.Resampling.LANCZOS)
+                        frames.append(new_frame)
+
+                    if frames:
+                        out = io.BytesIO()
+                        # Salva todos os frames de volta como um GIF animado
+                        frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], loop=0, duration=duration, disposal=2)
+                        processed_data = out.getvalue()
+                        cache_path = LOCAL_AVATAR_DIR / f"{user_id}.gif"
+                        cache_path.write_bytes(processed_data)
+                        return processed_data, "gif"
+
+                # Para outros formatos, continuamos com o redimensionamento e conversão para PNG
                 if img.mode != "RGBA":
                     img = img.convert("RGBA")
 
-                # Redimensiona (ex: 32x32)
-                img.thumbnail((32, 32), Image.Resampling.LANCZOS)
+                # Redimensiona (ex: 48x48)
+                img.thumbnail((48, 48), Image.Resampling.LANCZOS)
 
                 # Salva em um buffer e no arquivo
                 out = io.BytesIO()
@@ -552,11 +574,12 @@ class ChatBridge:
                 processed_data = out.getvalue()
 
                 # Salva no cache local
+                cache_path = LOCAL_AVATAR_DIR / f"{user_id}.png"
                 cache_path.write_bytes(processed_data)
-                return processed_data
+                return processed_data, "png"
         except Exception as e:
             logger.error(f"Erro ao processar avatar para Discord ({username}): {e}")
-            return cache_path.read_bytes() if cache_path.exists() else None
+            return None, "png"
 
     async def process_media_group_delayed(self, gid: str, bot):
         await asyncio.sleep(settings.album_wait_seconds)

@@ -188,9 +188,9 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
         try:
             channel = discord_bot.get_channel(discord_bot.channel_id)
             if channel:
-                avatar_bytes = await bridge.get_discord_avatar(user_data)
+                avatar_bytes, ext = await bridge.get_discord_avatar(user_data)
                 if avatar_bytes:
-                    file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
+                    file = discord.File(io.BytesIO(avatar_bytes), filename=f"avatar.{ext}")
 
                     # Estilo solicitado pelo usuário
                     # Usamos apenas o texto da mensagem na descrição, já que o nome está no autor
@@ -220,7 +220,7 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     embed.set_footer(text=msg_date)
 
                     # Autor com o nome do usuário e o ícone (avatar)
-                    embed.set_author(name=m_username if m_username else "Sistema", icon_url="attachment://avatar.png")
+                    embed.set_author(name=m_username if m_username else "Sistema", icon_url=f"attachment://avatar.{ext}")
 
                     msg_ds = await channel.send(file=file, embed=embed)
                 else:
