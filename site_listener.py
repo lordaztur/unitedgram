@@ -43,6 +43,17 @@ NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 _NET_RETRY_BACKOFFS = (3, 7, 15)
 
 
+def _strip_image_urls(text: str) -> str:
+    if not text:
+        return text
+    text = _RE_IMAGE_URL.sub("", text)
+    text = re.sub(r"[^\S\n]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    text = re.sub(r"[:\s]+$", "", text)
+    return text.strip()
+
+
 def _extract_payload(args):
     for a in args:
         if isinstance(a, dict) and "message" in a: return a
@@ -151,6 +162,9 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
             return url
         images = list(await asyncio.gather(*[_resolve(u) for u in img_urls]))
 
+    if images:
+        text_tg = _strip_image_urls(text_tg)
+
     avatar_url = None if images else await bridge.get_avatar_url(user_data)
 
     sent_msg_tg = None
@@ -202,6 +216,12 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                     clean_text = clean_html(m.get("message") or "")
                     description = format_discord_body(bridge, clean_text)
 
+                    embed_img_url = None
+                    img_urls = _RE_IMAGE_URL.findall(description)
+                    if img_urls:
+                        embed_img_url = img_urls[0]
+                        description = _strip_image_urls(description)
+
                     # Extração da cor do usuário (do grupo ou status)
                     user_color = 0x5865F2  # Azul padrão
                     if m.get("type") == "notification":
@@ -213,12 +233,12 @@ async def deliver_message(bridge, app: Application, discord_bot, m: dict):
                             with contextlib.suppress(ValueError):
                                 user_color = int(hex_color.lstrip("#"), 16)
 
-                    embed = discord.Embed(description=description if description else "(Mensagem vazia)", color=user_color)
+                    if not description:
+                        description = None if embed_img_url else "(Mensagem vazia)"
+                    embed = discord.Embed(description=description, color=user_color)
 
-                    # Tenta extrair uma URL de imagem para mostrar no Embed
-                    img_urls = _RE_IMAGE_URL.findall(description)
-                    if img_urls:
-                        embed.set_image(url=img_urls[0])
+                    if embed_img_url:
+                        embed.set_image(url=embed_img_url)
 
                     # Footer com a data da mensagem (apenas o horário)
                     msg_date = m.get("created_at") or m.get("date") or time.strftime("%H:%M:%S")
