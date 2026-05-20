@@ -87,6 +87,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+> **Stickers (instalação nativa):** o render de stickers animados precisa de bibliotecas de sistema. No Debian/Ubuntu:
+> ```bash
+> sudo apt install -y libcairo2 ffmpeg
+> ```
+> `libcairo2` é obrigatória pra stickers Lottie/`.tgs`. `ffmpeg` é pra stickers de vídeo `.webm` (sem ele, o `imageio-ffmpeg` tenta baixar um binário no primeiro uso). No Docker isso já vem pronto na imagem.
+
 ### 2. Configure o `.env`
 
 ```bash
@@ -354,16 +360,22 @@ nssm remove unitedgram confirm     # desinstalar
 
 O repositório já inclui um `Dockerfile` e um `docker-compose.yml`.
 
-O `docker-compose.yml` monta dois volumes pra preservar estado entre rebuilds:
+A imagem é baseada em `python:3.12-slim` e instala `libcairo2` (render de stickers Lottie/`.tgs`) e `ffmpeg` (stickers de vídeo `.webm`) via apt — sem isso o envio de stickers animados quebra.
 
-- `./avatar_cache.json` → cache de avatares (precisa existir como arquivo)
+O `docker-compose.yml` monta volumes pra preservar estado entre rebuilds:
+
 - `./cookies/` → diretório onde o bot lê/atualiza `cookies.txt` da sessão
+- `./avatar_cache.json` → cache de avatares do Telegram
+- `./discord_avatar_cache.json` → cache de avatares do Discord
+- `./msg_map.json` → cache de mensagens p/ replies (sem esse volume, replies a mensagens antigas perdem a citação após restart)
+- `./avatars/` → avatares baixados (Discord)
+- `./stickers/` → stickers já renderizados (evita re-render após restart)
 
-**Antes do primeiro `up`**, prepare os dois (senão o Docker pode criar `avatar_cache.json` como diretório, e o bot fica sem sessão):
+**Antes do primeiro `up`**, crie os arquivos `.json` (senão o Docker cria diretórios no lugar e o bot falha ao escrever):
 
 ```bash
-echo '{}' > avatar_cache.json
-mkdir -p cookies
+mkdir -p cookies avatars stickers
+for f in avatar_cache.json discord_avatar_cache.json msg_map.json; do echo '{}' > "$f"; done
 # Exporte cookies.txt do navegador (veja Passo 2) e salve em cookies/cookies.txt
 docker compose up -d
 ```

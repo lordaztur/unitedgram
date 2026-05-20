@@ -8,6 +8,14 @@ services:
     env_file:
       - .env
     volumes:
-      - ./avatar_cache.json:/app/avatar_cache.json
       - ./cookies:/app/cookies
+      # Caches que devem sobreviver a restarts do container.
+      # ATENÇÃO: os arquivos .json precisam EXISTIR no host antes do 1º run
+      # (ex: `touch msg_map.json discord_avatar_cache.json avatar_cache.json`),
+      # senão o Docker cria diretórios no lugar e o bot falha ao escrever.
+      - ./avatar_cache.json:/app/avatar_cache.json
+      - ./discord_avatar_cache.json:/app/discord_avatar_cache.json
+      - ./msg_map.json:/app/msg_map.json
+      - ./avatars:/app/avatars
+      - ./stickers:/app/stickers
     command: ["python", "main.py"]
