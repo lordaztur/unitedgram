@@ -93,6 +93,7 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 - Em **falha**, o bot reage com 👎 na sua mensagem original.
 - Use **Responder** do Discord em uma mensagem do bot pra criar uma citação BBCode automática no site.
 - **Imagens** (anexos): suportadas as extensões `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`. Com `IMGBB_API_KEY` configurada, o bot sobe no imgbb (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
+- **Stickers**: suportados PNG, GIF, APNG e Lottie (Nitro). Animados são convertidos pra GIF, cacheados em `./stickers/`, e enviados como `[img=150]url[/img]` (largura controlada por `STICKER_IMG_WIDTH`; `0` desativa o tamanho fixo).
 
 **Site → Discord**:
 - Cada mensagem do chat vira um **embed colorido** com:

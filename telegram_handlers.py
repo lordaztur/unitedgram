@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
+from stickers import process_telegram_sticker, sticker_bbcode
 
 __all__ = [
     "check_chat", "ping", "status",
@@ -113,6 +114,14 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             img_url = await bridge.upload_to_imgbb(file_bytes, ephemeral=True)
             if img_url: bbcode_img = f"[img]{img_url}[/img]"
             else: await update.message.reply_text("❌ Falha no upload.")
+        except Exception: pass
+    elif update.message.sticker:
+        try:
+            result = await process_telegram_sticker(update.message.sticker, context.bot)
+            if result:
+                data, ext = result
+                img_url = await bridge.upload_to_imgbb(data, ephemeral=True, filename=f"sticker.{ext}")
+                if img_url: bbcode_img = sticker_bbcode(img_url)
         except Exception: pass
 
     if not text and not bbcode_img: return

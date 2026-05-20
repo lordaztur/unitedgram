@@ -80,6 +80,7 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 - Em **falha**, o bot reage com 👎 na sua mensagem original.
 - Use **Responder** do Telegram em uma mensagem do bot pra criar uma citação BBCode automática no site.
 - **Imagens** (foto solo ou álbum): mande normalmente. Com `IMGBB_API_KEY` configurada, o bot sobe no imgbb (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
+- **Stickers**: suportados estáticos (`.webp`), animados Lottie (`.tgs`) e em vídeo (`.webm`). Os animados são convertidos pra GIF, cacheados em `./stickers/` (renderiza só na primeira vez), e enviados como `[img=150]url[/img]` (largura controlada por `STICKER_IMG_WIDTH`; `0` desativa o tamanho fixo).
 
 **Site → Telegram**:
 - Cada mensagem do chat vira uma mensagem no Telegram, formatada com nome do remetente em **negrito** e o texto.

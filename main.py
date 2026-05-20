@@ -48,7 +48,7 @@ async def main():
                 app.add_handler(CommandHandler("ping", ping))
                 app.add_handler(CommandHandler("status", status))
                 app.add_handler(CommandHandler("online", online_cmd))
-                app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, forward_handler))
+                app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Sticker.ALL) & ~filters.COMMAND, forward_handler))
                 app.add_handler(CallbackQueryHandler(delete_callback))
 
                 await app.initialize()

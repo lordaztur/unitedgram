@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
+from stickers import process_discord_sticker, sticker_bbcode
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,19 @@ class DiscordBot(commands.Bot):
                         logger.error(f"Erro ao processar anexo do Discord: {e}")
                         with contextlib.suppress(BaseException):
                             await message.reply(f"⚠️ Erro interno ao processar imagem: {attachment.filename}")
+
+        if message.stickers:
+            for sticker_item in message.stickers:
+                try:
+                    result = await process_discord_sticker(sticker_item, self.bridge.upload_client)
+                    if not result:
+                        continue
+                    data, ext = result
+                    img_url = await self.bridge.upload_to_imgbb(data, ephemeral=True, filename=f"sticker.{ext}")
+                    if img_url:
+                        bbcode_img += f"{sticker_bbcode(img_url)} "
+                except Exception as e:
+                    logger.error(f"Erro ao processar sticker do Discord ({sticker_item.id}): {e}")
 
         if not text and not bbcode_img:
             return

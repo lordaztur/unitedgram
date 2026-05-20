@@ -24,6 +24,7 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 - 💬 **Mensagens do site → Bots** em tempo real (via WebSocket)
 - 📤 **Mensagens dos Bots → site** (suporte a BBCode, imagens e replies em ambas as plataformas)
 - 🖼️ **Imagens bidirecionais** — suporte a upload via ImgBB para anexos vindos do Telegram/Discord
+- 🎭 **Stickers** — Telegram (estáticos `.webp`, animados Lottie `.tgs`, vídeo `.webm`) e Discord (PNG, GIF, APNG, Lottie) viram `[img=150]` no site (largura configurável via `STICKER_IMG_WIDTH`; animados convertidos pra GIF, cache local)
 - 👤 **Avatares Premium** — No Telegram (via ImgBB) e Discord (Embeds nativos com suporte a **GIFs animados**)
 - 👥 **`/online`** (Telegram) ou `!online` (Discord) mostra quem está no chat agora
 - 🧵 **Threading de respostas** preservado entre todas as pontas
@@ -409,6 +410,7 @@ Destaques:
 - `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer `IMGBB_API_KEY` pra avatares custom)
 - `AVATAR_REVALIDATE_SECONDS=1800` — TTL do cache de avatar; pós-expiração, baixa de novo e só re-sobe se mudou
 - `IMGBB_MSG_EXPIRATION_SECONDS=43200` — tempo que imagens de mensagem ficam no imgbb antes do auto-delete (default 12h). **`0` = nunca deletar** (permanente). Range válido do imgbb: 60–15552000s. Avatares NÃO são afetados.
+- `STICKER_IMG_WIDTH=150` — largura em pixels usada no `[img=N]` quando o bot manda sticker pro site. **`0`** desativa o param de tamanho (vira `[img]` puro).
 
 **Sobre o imgbb:** quando você manda uma foto/álbum do Telegram pro site, o bot sobe a imagem no imgbb com **expiração de 12 horas** por padrão (auto-delete pelo lado do imgbb). É tempo suficiente pra todo mundo ver no chat, mas não fica eternamente hospedado no seu account. Ajuste via `IMGBB_MSG_EXPIRATION_SECONDS` no `.env` — use `0` se quiser que fiquem permanentes. Avatares **não** usam expiração — ficam sempre permanentes (revalidação por hash cuida da atualização).
 

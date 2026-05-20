@@ -50,6 +50,7 @@ discord_avatar_cache.json.tmp
 avatars/*.png
 avatars/*.gif
 !avatars/.gitkeep
+stickers/
 
 # --- backups e temporários ---
 *.bak
