@@ -47,6 +47,8 @@ avatar_cache.json
 avatar_cache.json.tmp
 discord_avatar_cache.json
 discord_avatar_cache.json.tmp
+msg_map.json
+msg_map.json.tmp
 avatars/*.png
 avatars/*.gif
 !avatars/.gitkeep

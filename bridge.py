@@ -39,6 +39,9 @@ _IMG_429_BACKOFFS = (1, 3)
 
 AVATAR_CACHE_PATH = Path(__file__).parent / "avatar_cache.json"
 DISCORD_AVATAR_CACHE_PATH = Path(__file__).parent / "discord_avatar_cache.json"
+MSG_MAP_CACHE_PATH = Path(__file__).parent / "msg_map.json"
+_MSG_MAP_SAVE_INTERVAL = 5.0
+_MSG_MAP_TTL_SECONDS = 12 * 3600
 LOCAL_AVATAR_DIR = Path(__file__).parent / "avatars"
 LOCAL_AVATAR_DIR.mkdir(exist_ok=True)
 
@@ -323,7 +326,8 @@ class ChatBridge:
 
         self.last_seen_id = 0
         self.cache_limit = settings.msg_map_limit
-        self.msg_map: OrderedDict[int, dict[str, Any]] = OrderedDict()
+        self.msg_map: OrderedDict[int, dict[str, Any]] = self._load_msg_map()
+        self._msg_map_last_save = 0.0
         self.media_buffer: dict[str, dict] = {}
 
         self.ws_channel = f"presence-chatroom.{cfg.chatroom_id}"
@@ -349,6 +353,7 @@ class ChatBridge:
         await self.close()
 
     async def close(self):
+        self._save_msg_map(force=True)
         await self.client.aclose()
         await self.upload_client.aclose()
 
@@ -655,6 +660,8 @@ class ChatBridge:
         payload = final_text
         if reply_id and reply_id in self.msg_map:
             payload = build_bbcode_payload(self.msg_map[reply_id], final_text)
+        elif reply_id:
+            logger.info(f"process_media_group_delayed: reply para msg {reply_id} sem quote (não está no msg_map; size={len(self.msg_map)})")
 
         if await self.send_message(payload):
             if status_msg:
@@ -668,6 +675,50 @@ class ChatBridge:
                 with contextlib.suppress(BaseException):
                     await status_msg.edit_text("❌ Erro envio site.")
 
+    def _load_msg_map(self) -> "OrderedDict[int, dict[str, Any]]":
+        try:
+            with open(MSG_MAP_CACHE_PATH, encoding="utf-8") as f:
+                raw = json.load(f)
+            now = time.time()
+            result: OrderedDict[int, dict[str, Any]] = OrderedDict()
+            for k, v in raw.items():
+                if isinstance(v, dict) and "site_id" in v:
+                    result[int(k)] = {
+                        "site_id": int(v.get("site_id", 0)),
+                        "handle": str(v.get("handle", "")),
+                        "text": str(v.get("text", "")),
+                        "ts": float(v.get("ts", now)),
+                    }
+            self._prune_msg_map(result)
+            return result
+        except FileNotFoundError:
+            return OrderedDict()
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            logger.warning(f"msg_map: corrompido ({e}); começando vazio")
+            return OrderedDict()
+
+    def _prune_msg_map(self, target: "Optional[OrderedDict[int, dict[str, Any]]]" = None) -> None:
+        mm = self.msg_map if target is None else target
+        cutoff = time.time() - _MSG_MAP_TTL_SECONDS
+        while mm:
+            oldest = next(iter(mm))
+            if mm[oldest].get("ts", 0.0) >= cutoff:
+                break
+            mm.popitem(last=False)
+
+    def _save_msg_map(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self._msg_map_last_save < _MSG_MAP_SAVE_INTERVAL:
+            return
+        self._msg_map_last_save = now
+        tmp = MSG_MAP_CACHE_PATH.with_suffix(".json.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({str(k): v for k, v in self.msg_map.items()}, f)
+            tmp.replace(MSG_MAP_CACHE_PATH)
+        except OSError as e:
+            logger.warning(f"msg_map: falha ao salvar: {e}")
+
     def _cache_message(self, msg_id: int, site_msg_data: dict):
         user = site_msg_data.get("user") or {}
         handle = user.get("username") or user.get("name") or f"user{user.get('id')}"
@@ -677,9 +728,12 @@ class ChatBridge:
             "site_id": int(site_msg_data.get("id", 0)),
             "handle": str(handle).strip(),
             "text": extract_reply_content(clean_text),
+            "ts": time.time(),
         }
+        self._prune_msg_map()
         while len(self.msg_map) > self.cache_limit:
             self.msg_map.popitem(last=False)
+        self._save_msg_map()
 
     async def fetch_messages(self) -> list:
         try:

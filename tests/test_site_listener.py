@@ -67,6 +67,8 @@ def _bridge_returning(messages):
         base_url=bridge.base_url,
         transport=httpx.MockTransport(handler),
     )
+    bridge.msg_map.clear()
+    bridge._save_msg_map = lambda *a, **k: None
     return bridge
 
 

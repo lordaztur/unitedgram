@@ -1,5 +1,6 @@
 import asyncio
 import html
+import logging
 import time
 
 from telegram import Update
@@ -8,6 +9,8 @@ from telegram.ext import ContextTypes
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
 from stickers import process_telegram_sticker, sticker_bbcode
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "check_chat", "ping", "status",
@@ -129,7 +132,10 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if reply and reply.message_id in bridge.msg_map:
         payload = build_bbcode_payload(bridge.msg_map[reply.message_id], final_text)
-    else: payload = final_text
+    else:
+        if reply:
+            logger.info(f"forward_handler: reply para msg {reply.message_id} sem quote (não está no msg_map; size={len(bridge.msg_map)})")
+        payload = final_text
 
     if await bridge.send_message(payload):
         try: await update.message.delete()

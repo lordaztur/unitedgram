@@ -81,6 +81,8 @@ class DiscordBot(commands.Bot):
             orig_msg_id = message.reference.message_id
             if orig_msg_id in self.bridge.msg_map:
                 payload = build_bbcode_payload(self.bridge.msg_map[orig_msg_id], final_text)
+            else:
+                logger.info(f"on_message: reply para msg {orig_msg_id} sem quote (não está no msg_map; size={len(self.bridge.msg_map)})")
 
         if await self.bridge.send_message(payload):
             with contextlib.suppress(Exception):
