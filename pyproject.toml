@@ -1,6 +1,6 @@
 [project]
 name = "unitedgram"
-version = "1.5.0"
+version = "1.5.1"
 description = "Ponte bidirecional em tempo real entre um chat de tracker UNIT3D e um grupo/tópico do Telegram"
 requires-python = ">=3.11"
 
