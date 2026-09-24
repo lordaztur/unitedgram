@@ -38,15 +38,15 @@ class DiscordBot(commands.Bot):
         text = message.content.strip()
         bbcode_img = ""
 
-        if message.attachments and not self.bridge.imgbb_key:
-            logger.warning("Anexo detectado no Discord, mas IMGBB_API_KEY não está configurada.")
+        if message.attachments and not self.bridge.image_host_configured:
+            logger.warning("Anexo detectado no Discord, mas a API key do host de imagens não está configurada.")
 
         if message.attachments:
             for attachment in message.attachments:
                 if any(attachment.filename.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
                     try:
                         img_bytes = await attachment.read()
-                        img_url = await self.bridge.upload_to_imgbb(img_bytes, ephemeral=True, filename=attachment.filename)
+                        img_url = await self.bridge.upload_image(img_bytes, ephemeral=True, filename=attachment.filename)
                         if img_url:
                             bbcode_img += f"[img]{img_url}[/img] "
                         else:
@@ -65,7 +65,7 @@ class DiscordBot(commands.Bot):
                     if not result:
                         continue
                     data, ext = result
-                    img_url = await self.bridge.upload_to_imgbb(data, ephemeral=True, filename=f"sticker.{ext}")
+                    img_url = await self.bridge.upload_image(data, ephemeral=True, filename=f"sticker.{ext}")
                     if img_url:
                         bbcode_img += f"{sticker_bbcode(img_url)} "
                 except Exception as e:

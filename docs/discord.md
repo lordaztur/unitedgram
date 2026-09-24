@@ -73,7 +73,7 @@ Quando alguém te citar pelo username no UNIT3D, o bot transforma em `<@SEU_ID>`
 | `DISCORD_CHANNEL_ID` | Sim | ID do canal de texto |
 | `DISCORD_USER_ID` | Opcional | Seu ID no Discord pra receber menções |
 
-As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [README principal](../README.md#2-configure-o-env).
+As variáveis comuns (site, identidade, host de imagens) estão na seção `.env` do [README principal](../README.md#2-configure-o-env).
 
 ---
 
@@ -92,7 +92,7 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 - Digite no canal configurado. Em **sucesso**, o bot apaga sua mensagem (ela vai aparecer pelo bot, formatada).
 - Em **falha**, o bot reage com 👎 na sua mensagem original.
 - Use **Responder** do Discord em uma mensagem do bot pra criar uma citação BBCode automática no site.
-- **Imagens** (anexos): suportadas as extensões `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`. Com `IMGBB_API_KEY` configurada, o bot sobe no imgbb (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
+- **Imagens** (anexos): suportadas as extensões `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`. Com a API key do host selecionado (`IMAGE_HOST=imgbb` ou `passtheimage`) configurada, o bot sobe a imagem (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
 - **Stickers**: suportados PNG, GIF, APNG e Lottie (Nitro). Animados são convertidos pra GIF, cacheados em `./stickers/`, e enviados como `[img=150]url[/img]` (largura controlada por `STICKER_IMG_WIDTH`; `0` desativa o tamanho fixo).
 
 **Site → Discord**:
@@ -110,7 +110,7 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 
 ## 9. Cache de avatares (local)
 
-O Discord usa **cache em disco** em `./avatars/` (diferente do Telegram que usa imgbb):
+O Discord usa **cache em disco** em `./avatars/` (diferente do Telegram que usa o host de imagens configurado):
 
 - Arquivos: `./avatars/{user_id}.png` ou `.gif`
 - Índice: `discord_avatar_cache.json` com `{user_id: {hash, ext}}`
@@ -129,5 +129,5 @@ Pra limpar o cache: apague os arquivos em `./avatars/` e o `discord_avatar_cache
 - **Bot conecta mas mensagens chegam vazias**: você esqueceu de habilitar **Message Content Intent** no portal.
 - **Bot não apaga mensagens em sucesso**: falta permissão **Manage Messages** no canal.
 - **Avatares não aparecem nos embeds**: cheque `bot_bridge.log` — provavelmente erro no download do `/authenticated-images/user-avatars/...` (cookie expirou) ou Pillow não conseguiu processar.
-- **❌ no upload de imagem**: o imgbb pode estar rate-limitando ou a `IMGBB_API_KEY` não está configurada.
+- **❌ no upload de imagem**: o host selecionado pode estar indisponível ou sua API key pode estar ausente.
 - **Bot não responde a `!ping`**: cheque se ele está conectado (`🔌 Discord conectado como ...` no log) e se o `DISCORD_CHANNEL_ID` aponta pro canal certo.

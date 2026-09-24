@@ -114,7 +114,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo = update.message.photo[-1]
             file_obj = await context.bot.get_file(photo.file_id)
             file_bytes = await file_obj.download_as_bytearray()
-            img_url = await bridge.upload_to_imgbb(file_bytes, ephemeral=True)
+            img_url = await bridge.upload_image(file_bytes, ephemeral=True)
             if img_url: bbcode_img = f"[img]{img_url}[/img]"
             else: await update.message.reply_text("❌ Falha no upload.")
         except Exception: pass
@@ -123,7 +123,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = await process_telegram_sticker(update.message.sticker, context.bot)
             if result:
                 data, ext = result
-                img_url = await bridge.upload_to_imgbb(data, ephemeral=True, filename=f"sticker.{ext}")
+                img_url = await bridge.upload_image(data, ephemeral=True, filename=f"sticker.{ext}")
                 if img_url: bbcode_img = sticker_bbcode(img_url)
         except Exception as e:
             logger.warning(f"forward_handler: falha processando sticker: {e}")
@@ -133,7 +133,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_bytes = await download_telegram_file(context.bot, anim.file_id, "animation")
             if file_bytes is not None:
                 gif_data = await telegram_animation_to_gif(file_bytes, getattr(anim, "mime_type", "") or "")
-                img_url = await bridge.upload_to_imgbb(gif_data, ephemeral=True, filename="anim.gif")
+                img_url = await bridge.upload_image(gif_data, ephemeral=True, filename="anim.gif")
                 if img_url: bbcode_img = f"[img]{img_url}[/img]"
                 else: await update.message.reply_text("❌ Falha no upload do GIF.")
         except Exception as e:

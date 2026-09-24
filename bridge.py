@@ -242,6 +242,8 @@ class BridgeConfig:
     tg_topic_id: Optional[int]
     imgbb_key: Optional[str]
     aliases: tuple
+    image_host: str = "imgbb"
+    passtheimage_key: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "BridgeConfig":
@@ -273,6 +275,10 @@ class BridgeConfig:
         if not has_tg and not has_ds:
             raise RuntimeError("Nenhuma plataforma (Telegram ou Discord) configurada corretamente no .env!")
 
+        image_host = os.getenv("IMAGE_HOST", "imgbb").strip().lower()
+        if image_host not in ("imgbb", "passtheimage"):
+            raise RuntimeError("IMAGE_HOST deve ser 'imgbb' ou 'passtheimage'")
+
         return cls(
             base_url=os.getenv("BASE_URL", ""),
             ws_host=_compose_ws_host(os.getenv("WS_HOST", ""), os.getenv("WS_PORT", "8443")),
@@ -281,6 +287,8 @@ class BridgeConfig:
             tg_topic_id=int(topic) if topic else None,
             imgbb_key=os.getenv("IMGBB_API_KEY"),
             aliases=aliases,
+            image_host=image_host,
+            passtheimage_key=os.getenv("PASSTHEIMAGE_API_KEY"),
         )
 
 
@@ -293,6 +301,8 @@ class ChatBridge:
         self.tg_chat_id = cfg.tg_chat_id
         self.tg_topic_id = cfg.tg_topic_id
         self.imgbb_key = cfg.imgbb_key
+        self.image_host = cfg.image_host
+        self.passtheimage_key = cfg.passtheimage_key
         self.aliases = cfg.aliases
 
         self.user_id = 0
@@ -411,22 +421,42 @@ class ChatBridge:
             await asyncio.sleep(wait)
         return None
 
-    async def upload_to_imgbb(self, image_data, ephemeral: bool = False, filename: str = "upload.jpg") -> str:
-        if not self.imgbb_key:
-            logger.error("IMGBB_API_KEY não configurada!")
+    @property
+    def image_host_configured(self) -> bool:
+        return bool(self.passtheimage_key if self.image_host == "passtheimage" else self.imgbb_key)
+
+    async def upload_image(self, image_data, ephemeral: bool = False, filename: str = "upload.jpg") -> str:
+        if not self.image_host_configured:
+            logger.error("API key não configurada para IMAGE_HOST=%s", self.image_host)
             return ""
         try:
-            payload = {"key": self.imgbb_key}
-            if ephemeral and settings.imgbb_msg_expiration_seconds > 0:
-                payload["expiration"] = str(settings.imgbb_msg_expiration_seconds)
-            files = {"image": image_data} if hasattr(image_data, "read") else {"image": (filename, bytes(image_data))}
-            resp = await self.upload_client.post("https://api.imgbb.com/1/upload", data=payload, files=files)
+            if self.image_host == "passtheimage":
+                payload = {"format": "json"}
+                if ephemeral and settings.image_msg_expiration_seconds > 0:
+                    payload["expiration"] = f"PT{settings.image_msg_expiration_seconds}S"
+                field = "source"
+                endpoint = "https://passtheima.ge/api/1/upload"
+                headers = {"X-API-Key": self.passtheimage_key}
+            else:
+                payload = {"key": self.imgbb_key}
+                if ephemeral and settings.image_msg_expiration_seconds > 0:
+                    payload["expiration"] = str(settings.image_msg_expiration_seconds)
+                field = "image"
+                endpoint = "https://api.imgbb.com/1/upload"
+                headers = None
+            files = {field: image_data} if hasattr(image_data, "read") else {field: (filename, bytes(image_data))}
+            resp = await self.upload_client.post(endpoint, data=payload, files=files, headers=headers)
             if resp.status_code == 200:
-                return resp.json()['data']['url']
-            logger.warning(f"upload_to_imgbb: HTTP {resp.status_code}")
+                body = resp.json()
+                url = body.get("image", {}).get("url") if self.image_host == "passtheimage" else body.get("data", {}).get("url")
+                if isinstance(url, str) and url.startswith(("https://", "http://")):
+                    return url
+                logger.warning("upload_image (%s): resposta sem URL válida", self.image_host)
+                return ""
+            logger.warning("upload_image (%s): HTTP %s", self.image_host, resp.status_code)
             return ""
         except Exception as e:
-            _log_http_failure("upload_to_imgbb", e)
+            _log_http_failure(f"upload_image ({self.image_host})", e)
             return ""
 
     def _load_avatar_cache(self) -> dict[int, dict[str, Any]]:
@@ -438,12 +468,13 @@ class ChatBridge:
                 uid = int(k)
                 if isinstance(v, str):
                     # Migra formato antigo (só URL) → força revalidação no próximo acesso.
-                    result[uid] = {"hash": "", "url": v, "ts": 0.0}
+                    result[uid] = {"hash": "", "url": v, "ts": 0.0, "host": "imgbb"}
                 elif isinstance(v, dict) and "url" in v:
                     result[uid] = {
                         "hash": str(v.get("hash", "")),
                         "url": str(v["url"]),
                         "ts": float(v.get("ts", 0.0)),
+                        "host": str(v.get("host", "imgbb")),
                     }
             return result
         except FileNotFoundError:
@@ -523,11 +554,13 @@ class ChatBridge:
             cache_key = 0
             label = "default"
 
-        if not self.imgbb_key:
+        if not self.image_host_configured:
             return src if cache_key == 0 else None
 
         now = time.time()
         cached = self.avatar_cache.get(cache_key)
+        if cached and cached.get("host") != self.image_host:
+            cached = None
         if cached and (now - cached.get("ts", 0.0)) < settings.avatar_revalidate_seconds:
             return cached["url"]
 
@@ -541,11 +574,11 @@ class ChatBridge:
             self._save_avatar_cache()
             return cached["url"]
 
-        public_url = await self.upload_to_imgbb(data)
+        public_url = await self.upload_image(data)
         if not public_url:
             return cached["url"] if cached else (src if cache_key == 0 else None)
 
-        self.avatar_cache[cache_key] = {"hash": new_hash, "url": public_url, "ts": now}
+        self.avatar_cache[cache_key] = {"hash": new_hash, "url": public_url, "ts": now, "host": self.image_host}
         self._save_avatar_cache()
         action = "atualizado" if cached else "cacheado"
         logger.info(f"avatar {action} p/ {label} (key={cache_key}): {public_url}")
@@ -649,7 +682,7 @@ class ChatBridge:
             try:
                 file_obj = await bot.get_file(photo_obj.file_id)
                 file_bytes = await file_obj.download_as_bytearray()
-                return await self.upload_to_imgbb(file_bytes, ephemeral=True)
+                return await self.upload_image(file_bytes, ephemeral=True)
             except Exception as e:
                 logger.warning(f"upload álbum item {photo_obj.file_id}: {e}")
                 return ""

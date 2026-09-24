@@ -23,9 +23,9 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 
 - 💬 **Mensagens do site → Bots** em tempo real (via WebSocket)
 - 📤 **Mensagens dos Bots → site** (suporte a BBCode, imagens e replies em ambas as plataformas)
-- 🖼️ **Imagens bidirecionais** — suporte a upload via ImgBB para anexos vindos do Telegram/Discord
+- 🖼️ **Imagens bidirecionais** — upload via ImgBB ou Passtheima.ge para anexos vindos do Telegram/Discord
 - 🎭 **Stickers** — Telegram (estáticos `.webp`, animados Lottie `.tgs`, vídeo `.webm`) e Discord (PNG, GIF, APNG, Lottie) viram `[img=150]` no site (largura configurável via `STICKER_IMG_WIDTH`; animados convertidos pra GIF, cache local)
-- 👤 **Avatares Premium** — No Telegram (via ImgBB) e Discord (Embeds nativos com suporte a **GIFs animados**)
+- 👤 **Avatares Premium** — No Telegram (via host de imagens configurado) e Discord (Embeds nativos com suporte a **GIFs animados**)
 - 👥 **`/online`** (Telegram) ou `!online` (Discord) mostra quem está no chat agora
 - 🧵 **Threading de respostas** preservado entre todas as pontas
 - 🗑️ **Delete sincronizado** — botão no Telegram, reação 🗑️ no Discord, apaga em todos os lugares
@@ -58,7 +58,7 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 - 🐍 **Python 3.11+** — se for rodar nativo
 - 🖥️ **Um computador que possa, de preferência, ficar ligado direto** (pra manter o chat funcionando)
 - 🤖 **Token de bot do Telegram** (Opcional) ou **Bot do Discord** (Opcional)
-- 🖼️ **API key da [imgbb](https://api.imgbb.com/)** — Recomendada para avatares e envio de imagens
+- 🖼️ **API key da [imgbb](https://api.imgbb.com/) ou [Passtheima.ge](https://passtheima.ge/)** — Recomendada para avatares e envio de imagens
 
 ---
 
@@ -128,7 +128,10 @@ Edite `.env` preenchendo:
 | `TELEGRAM_USER` | Seu handle no Telegram (sem `@`) — menções viram tag clicável |
 | `DISCORD_USER_ID` | Seu ID numérico no Discord (para receber notificações/menções) |
 | `MY_ALIASES` | Outros apelidos pelos quais te chamam no chat, separados por vírgula |
-| `IMGBB_API_KEY` | Key grátis pra hospedar imagens do Telegram → site (imagens de mensagem se auto-deletam após **12h** no imgbb por padrão — configurável via `IMGBB_MSG_EXPIRATION_SECONDS`; avatares ficam permanentes) |
+| `IMAGE_HOST` | `imgbb` (padrão) ou `passtheimage` para imagens do Telegram/Discord → site e avatares do Telegram |
+| `IMGBB_API_KEY` | Key do ImgBB, usada quando `IMAGE_HOST=imgbb` |
+| `PASSTHEIMAGE_API_KEY` | Key do Passtheima.ge, usada quando `IMAGE_HOST=passtheimage` |
+| `IMAGE_MSG_EXPIRATION_SECONDS` | Expiração das imagens de mensagem (padrão: 43200 = 12h; `0` = permanente). `IMGBB_MSG_EXPIRATION_SECONDS` continua aceito como configuração anterior. Avatares são permanentes. |
 
 > 💡 Todas as outras variáveis do `.env.example` são **tuning opcional** com defaults sensatos. Veja o arquivo pra detalhes de cada uma.
 
@@ -449,12 +452,12 @@ Destaques:
 - `MIRROR_DELETIONS=false` — se `true`, apagar no site também apaga no Telegram
 - `SHOW_DELETE_BUTTON=true` — botão 🗑️ nas suas mensagens
 - `TAG_ALIASES=true` — `@seunome` vira tag clicável
-- `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer `IMGBB_API_KEY` pra avatares custom)
+- `SHOW_USER_AVATARS=true` — preview do avatar do remetente no Telegram (requer a API key do host selecionado pra avatares custom)
 - `AVATAR_REVALIDATE_SECONDS=1800` — TTL do cache de avatar; pós-expiração, baixa de novo e só re-sobe se mudou
-- `IMGBB_MSG_EXPIRATION_SECONDS=43200` — tempo que imagens de mensagem ficam no imgbb antes do auto-delete (default 12h). **`0` = nunca deletar** (permanente). Range válido do imgbb: 60–15552000s. Avatares NÃO são afetados.
+- `IMAGE_MSG_EXPIRATION_SECONDS=43200` — tempo que imagens de mensagem ficam no host antes do auto-delete (default 12h). **`0` = nunca deletar**. No ImgBB, range válido: 60–15552000s. Avatares NÃO são afetados. A variável antiga `IMGBB_MSG_EXPIRATION_SECONDS` continua funcionando.
 - `STICKER_IMG_WIDTH=150` — largura em pixels usada no `[img=N]` quando o bot manda sticker pro site. **`0`** desativa o param de tamanho (vira `[img]` puro).
 
-**Sobre o imgbb:** quando você manda uma foto/álbum do Telegram pro site, o bot sobe a imagem no imgbb com **expiração de 12 horas** por padrão (auto-delete pelo lado do imgbb). É tempo suficiente pra todo mundo ver no chat, mas não fica eternamente hospedado no seu account. Ajuste via `IMGBB_MSG_EXPIRATION_SECONDS` no `.env` — use `0` se quiser que fiquem permanentes. Avatares **não** usam expiração — ficam sempre permanentes (revalidação por hash cuida da atualização).
+**Sobre o host de imagens:** quando você manda uma foto/álbum do Telegram ou anexo do Discord pro site, o bot sobe a imagem no host selecionado com **expiração de 12 horas** por padrão. Ajuste via `IMAGE_MSG_EXPIRATION_SECONDS` no `.env` — use `0` se quiser que fiquem permanentes. Avatares **não** usam expiração. Para usar Passtheima.ge, configure `IMAGE_HOST=passtheimage` e `PASSTHEIMAGE_API_KEY`; a conta precisa ter acesso ao serviço.
 
 ---
 
