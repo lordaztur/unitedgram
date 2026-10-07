@@ -69,6 +69,8 @@ def setup(env_path: "str | os.PathLike | None" = None) -> None:
             logging.StreamHandler(),
         ],
     )
+    # O httpx loga a URL inteira em INFO, e a URL do Telegram traz o token do bot.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     # Sem argumento, mantém o comportamento antigo: .env na mesma pasta deste módulo.
     if env_path is None:
         env_path = Path(__file__).parent / '.env'
