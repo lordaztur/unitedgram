@@ -59,7 +59,7 @@ Se você não usa tópicos, deixe a variável comentada no `.env`.
 | `TELEGRAM_TOPIC_ID` | Opcional | ID do tópico (só supergrupo com tópicos) |
 | `TELEGRAM_USER` | Recomendada | Seu handle no TG (sem `@`). Quando aliases seus são citados no chat do site, vira tag clicável `[@SeuHandle]` na mensagem espelhada |
 
-As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [README principal](../README.md#2-configure-o-env).
+As variáveis comuns (site, identidade, host de imagens) estão na seção `.env` do [README principal](../README.md#2-configure-o-env).
 
 ---
 
@@ -79,12 +79,12 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 - Digite no chat onde o bot está. Em **sucesso**, sua mensagem é apagada do Telegram (vai aparecer pelo bot, formatada).
 - Em **falha**, o bot reage com 👎 na sua mensagem original.
 - Use **Responder** do Telegram em uma mensagem do bot pra criar uma citação BBCode automática no site.
-- **Imagens** (foto solo ou álbum): mande normalmente. Com `IMGBB_API_KEY` configurada, o bot sobe no imgbb (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
+- **Imagens** (foto solo ou álbum): mande normalmente. Com a API key do host selecionado (`IMAGE_HOST=imgbb` ou `passtheimage`) configurada, o bot sobe a imagem (auto-delete em 12h por padrão) e posta `[img]url[/img]` no site.
 - **Stickers**: suportados estáticos (`.webp`), animados Lottie (`.tgs`) e em vídeo (`.webm`). Os animados são convertidos pra GIF, cacheados em `./stickers/` (renderiza só na primeira vez), e enviados como `[img=150]url[/img]` (largura controlada por `STICKER_IMG_WIDTH`; `0` desativa o tamanho fixo).
 
 **Site → Telegram**:
 - Cada mensagem do chat vira uma mensagem no Telegram, formatada com nome do remetente em **negrito** e o texto.
-- **Avatar como preview**: mensagens texto-puro mostram um card pequeno embaixo com o avatar do usuário do site (cache persistente, revalidação por hash). Requer `IMGBB_API_KEY` pra avatares custom; placeholder default funciona sem.
+- **Avatar como preview**: mensagens texto-puro mostram um card pequeno embaixo com o avatar do usuário do site (cache persistente, revalidação por hash). Requer a API key do host selecionado pra avatares custom; placeholder default funciona sem.
 - **Botão 🗑️ Deletar**: suas próprias mensagens (detectadas via `MY_USERNAME`/`MY_ALIASES`) ganham um botão inline — apaga em ambos os lados quando clicado.
 - **Quotes/citações** do site são renderizadas como `<blockquote>` no Telegram.
 - **Emojis joypixels** do site (PNGs inline) são convertidos pra unicode nativo no Telegram.
@@ -96,5 +96,5 @@ As variáveis comuns (site, identidade, imgbb) estão na seção `.env` do [READ
 
 - **Bot não responde a `/ping`**: verifique se está como admin do grupo, e se `/setprivacy` foi setado pra DISABLE no BotFather.
 - **Mensagens do site não aparecem**: cheque `bot_bridge.log` por erros de WS ou cookie. Sessão pode ter expirado — reexporte `cookies/cookies.txt`.
-- **Avatares não aparecem**: cheque se `IMGBB_API_KEY` está setada. Sem ela, mostra só o nome do remetente.
-- **❌ no upload de imagem**: o imgbb pode estar fora ou rate-limitando. O bot tenta reenvio com backoff de 429.
+- **Avatares não aparecem**: cheque se a API key do host selecionado está configurada. Sem ela, mostra só o nome do remetente.
+- **❌ no upload de imagem**: cheque a key e a disponibilidade do host selecionado.
