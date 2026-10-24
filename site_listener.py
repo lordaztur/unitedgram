@@ -31,6 +31,9 @@ from formatting import (
 
 logger = logging.getLogger(__name__)
 
+_RE_DISCORD_ATTACHMENT = re.compile(
+    r'^https://(?:cdn\.discordapp\.com|media\.discordapp\.net)/attachments/\d+/\d+/([^/?#]+)'
+)
 _RE_IMAGE_URL = re.compile(r'https?://[^\s<>"]+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s<>"]*)?', re.IGNORECASE)
 
 __all__ = [
@@ -374,19 +377,31 @@ async def _edit_telegram_reactions(bridge, app: Application, msg_id: int, entry:
             logger.warning(f"reações: falha editando Telegram msg {msg_id}: {e}")
 
 
-def _as_attachment_url(url, attachments):
-    # Ao reeditar o embed, a URL vem resolvida pro CDN; volta pra attachment:// pra o
-    # Discord não exibir o avatar/figurinha também como anexo solto.
-    if not url:
-        return url
-    path = url.split("?", 1)[0]
-    for a in attachments:
-        if path.endswith("/" + a.filename):
-            return f"attachment://{a.filename}"
-    return url
+async def _reattach_embed_images(http, embed: discord.Embed) -> list:
+    # Anexos referenciados pelo embed (attachment://) ficam ocultos e nem aparecem em
+    # msg.attachments; o embed volta com a URL do CDN. Reeditar com essa URL "solta" o
+    # anexo, que passa a aparecer duplicado em cima da msg. Então baixa e reanexa.
+    files: dict[str, discord.File] = {}
+
+    async def reattach(url):
+        m = _RE_DISCORD_ATTACHMENT.match(url or "")
+        if not m:
+            return url
+        name = m.group(1)
+        if name not in files:
+            resp = await http.get(url)
+            resp.raise_for_status()
+            files[name] = discord.File(io.BytesIO(resp.content), filename=name)
+        return f"attachment://{name}"
+
+    if embed.author and embed.author.name:
+        embed.set_author(name=embed.author.name, icon_url=await reattach(embed.author.icon_url))
+    if embed.image and embed.image.url:
+        embed.set_image(url=await reattach(embed.image.url))
+    return list(files.values())
 
 
-async def _edit_discord_reactions(discord_bot, msg_id: int, entry: dict, reactions) -> None:
+async def _edit_discord_reactions(discord_bot, http, msg_id: int, entry: dict, reactions) -> None:
     channel = discord_bot.get_channel(discord_bot.channel_id) if discord_bot else None
     if not channel:
         return
@@ -397,11 +412,8 @@ async def _edit_discord_reactions(discord_bot, msg_id: int, entry: dict, reactio
                 return
             embed = msg.embeds[0].copy()
             _set_discord_reactions_field(embed, reactions)
-            if embed.author and embed.author.name:
-                embed.set_author(name=embed.author.name, icon_url=_as_attachment_url(embed.author.icon_url, msg.attachments))
-            if embed.image and embed.image.url:
-                embed.set_image(url=_as_attachment_url(embed.image.url, msg.attachments))
-            await msg.edit(embed=embed)
+            files = await _reattach_embed_images(http, embed)
+            await msg.edit(embed=embed, attachments=files)
         elif entry.get("render") is not None:
             await channel.get_partial_message(msg_id).edit(content=_discord_text_with_reactions(entry["render"], reactions))
     except Exception as e:
@@ -413,7 +425,7 @@ async def _apply_reactions(bridge, site_id: int, reactions) -> None:
         if entry.get("platform") == "tg":
             await _edit_telegram_reactions(bridge, bridge.telegram_app, msg_id, entry, reactions)
         elif entry.get("platform") == "ds":
-            await _edit_discord_reactions(bridge.discord_bot, msg_id, entry, reactions)
+            await _edit_discord_reactions(bridge.discord_bot, bridge.upload_client, msg_id, entry, reactions)
 
 
 async def _reaction_updater(bridge, site_id: int) -> None:
