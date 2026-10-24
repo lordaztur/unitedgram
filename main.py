@@ -82,11 +82,13 @@ config.setup(env_path=_env_path)
 logger = logging.getLogger(__name__)
 logger.info("Configuração: env=%s | cookies=%s", _env_path, _cookies_path)
 
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
+    MessageReactionHandler,
     filters,
 )
 
@@ -105,6 +107,7 @@ from telegram_handlers import (
     forward_handler,
     online_cmd,
     ping,
+    reaction_handler,
     status,
 )
 
@@ -123,6 +126,7 @@ async def main():
                 app.add_handler(CommandHandler("online", online_cmd))
                 app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Sticker.ALL | filters.ANIMATION) & ~filters.COMMAND, forward_handler))
                 app.add_handler(CallbackQueryHandler(delete_callback))
+                app.add_handler(MessageReactionHandler(reaction_handler))
 
                 await app.initialize()
                 await app.start()
@@ -151,7 +155,8 @@ async def main():
         ])
 
         if settings.enable_telegram:
-            await app.updater.start_polling()
+            # message_reaction não vem por padrão; precisa pedir explicitamente.
+            await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
             logger.info("🤖 Bot Telegram Rodando...")
 
         if ds_bot:

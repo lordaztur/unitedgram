@@ -162,6 +162,30 @@ async def process_telegram_sticker(sticker, bot) -> Optional[tuple[bytes, str]]:
     return data, ext
 
 
+async def process_site_sticker(url: str, download) -> Optional[tuple[bytes, str]]:
+    """Figurinha do chat do site (WebP autenticado) → PNG, ou GIF se for animada."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    unique_id = f"{parsed.netloc}_{parsed.path.rstrip('/').rsplit('/', 1)[-1]}".replace(":", "_")
+    if (hit := _cached("site", unique_id)) is not None:
+        return hit
+
+    raw = await download(url)
+    if not raw:
+        return None
+
+    try:
+        data = await asyncio.to_thread(_apng_to_gif, raw)
+        ext = "gif" if data[:4] == b"GIF8" else "png"
+    except Exception as e:
+        logger.warning(f"sticker(site/{unique_id}): falha no render: {e}")
+        return None
+
+    _save_cache("site", unique_id, data, ext)
+    return data, ext
+
+
 def _tg_kind(sticker) -> str:
     if sticker.is_animated:
         return "tgs/lottie"

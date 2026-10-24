@@ -3,11 +3,12 @@ import html
 import logging
 import time
 
-from telegram import Update
+from telegram import ReactionTypeEmoji, Update
 from telegram.ext import ContextTypes
 
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
+from site_listener import schedule_reaction_update
 from stickers import download_telegram_file, process_telegram_sticker, sticker_bbcode, telegram_animation_to_gif
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "check_chat", "ping", "status",
     "online_cmd",
-    "delete_callback", "forward_handler",
+    "delete_callback", "forward_handler", "reaction_handler",
 ]
 
 
@@ -83,6 +84,36 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("❌ Erro ao apagar no site.", show_alert=True)
     except Exception: await query.answer("Erro interno.")
+
+
+async def reaction_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Bots não podem remover reações de outros no Telegram, então a nativa fica;
+    # aqui só espelhamos o diff (adicionadas/removidas) pro site.
+    bridge: ChatBridge = context.bot_data['bridge']
+    mr = update.message_reaction
+    if not mr or mr.chat.id != bridge.tg_chat_id:
+        return
+    if mr.user and mr.user.is_bot:
+        return
+    cached = bridge.msg_map.get(mr.message_id)
+    if not cached or cached.get("platform", "tg") != "tg":
+        return
+
+    def _emojis(items):
+        return {r.emoji for r in items or () if isinstance(r, ReactionTypeEmoji)}
+
+    old, new = _emojis(mr.old_reaction), _emojis(mr.new_reaction)
+    reactions = None
+    for emoji, present in [(e, True) for e in new - old] + [(e, False) for e in old - new]:
+        site_emoji = await bridge.normalize_reaction(emoji)
+        if not site_emoji:
+            logger.info(f"reaction_handler: emoji {emoji} não é aceito como reação no site")
+            continue
+        res = await bridge.set_reaction(cached["site_id"], site_emoji, present)
+        if res is not None:
+            reactions = res
+    if reactions is not None:
+        schedule_reaction_update(bridge, cached["site_id"], reactions)
 
 
 async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

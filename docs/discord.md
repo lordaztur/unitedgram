@@ -102,6 +102,7 @@ As variáveis comuns (site, identidade, host de imagens) estão na seção `.env
   - **Autor**: username do remetente.
   - **Footer**: horário da mensagem (`HH:MM:SS`).
   - **Imagem inline**: se a mensagem contém uma URL de imagem (regex), aparece como `embed.set_image`.
+- **Reações**: reações feitas no site aparecem abaixo do texto do embed como "pílulas" em código inline (`🤣 usuario1`  `👍 usuario1, usuario2`) e são atualizadas quando mudam. Reagir a uma mensagem no Discord alterna a reação no site e o bot remove a reação nativa (precisa de **Manage Messages**); reagir de novo com o mesmo emoji remove. Emojis personalizados ou fora da lista do site são ignorados.
 - **Delete-mirror via reação**: suas próprias mensagens (detectadas via `MY_USERNAME`/`MY_ALIASES`) recebem reação 🗑️ automática quando `SHOW_DELETE_BUTTON=true`. Você reagir com 🗑️ apaga em ambos os lados.
 - **Quotes/citações** do site viram blockquote com prefixo `>` em cada linha (formato Markdown do Discord).
 - **Emojis joypixels** do site são convertidos pra unicode nativo.
