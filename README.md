@@ -28,6 +28,8 @@ Ponte **bidirecional em tempo real** entre um chat de tracker **UNIT3D** e plata
 - 👤 **Avatares Premium** — No Telegram (via host de imagens configurado) e Discord (Embeds nativos com suporte a **GIFs animados**)
 - 👥 **`/online`** (Telegram) ou `!online` (Discord) mostra quem está no chat agora
 - 🧵 **Threading de respostas** preservado entre todas as pontas
+- 🖼️ **Figurinhas do site** — stickers do chat do UNIT3D chegam como imagem no Telegram e no Discord
+- 😀 **Reações** — reações do site aparecem abaixo da mensagem (emoji + quem reagiu); reagir no Telegram/Discord reage no site (só emojis aceitos pelo site)
 - 🗑️ **Delete sincronizado** — botão no Telegram, reação 🗑️ no Discord, apaga em todos os lugares
 - 🔌 **Arquitetura Flexível** — Rode apenas com Discord, apenas com Telegram ou ambos ao mesmo tempo
 - 🔔 **Menções a você** no site viram marcações no Telegram e Discord (com `DISCORD_USER_ID`)

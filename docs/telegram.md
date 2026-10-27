@@ -85,6 +85,7 @@ As variáveis comuns (site, identidade, host de imagens) estão na seção `.env
 **Site → Telegram**:
 - Cada mensagem do chat vira uma mensagem no Telegram, formatada com nome do remetente em **negrito** e o texto.
 - **Avatar como preview**: mensagens texto-puro mostram um card pequeno embaixo com o avatar do usuário do site (cache persistente, revalidação por hash). Requer a API key do host selecionado pra avatares custom; placeholder default funciona sem.
+- **Reações**: reações feitas no site aparecem no fim da mensagem (emoji + quem reagiu) e são atualizadas quando mudam. Reagir a uma mensagem no Telegram adiciona/remove a reação no site (emojis fora da lista do site são ignorados). Requer o bot como **administrador** do grupo — o Telegram só envia atualizações de reação para bots admin. Bots não podem remover reações de outros usuários, então a reação nativa continua visível no Telegram.
 - **Botão 🗑️ Deletar**: suas próprias mensagens (detectadas via `MY_USERNAME`/`MY_ALIASES`) ganham um botão inline — apaga em ambos os lados quando clicado.
 - **Quotes/citações** do site são renderizadas como `<blockquote>` no Telegram.
 - **Emojis joypixels** do site (PNGs inline) são convertidos pra unicode nativo no Telegram.

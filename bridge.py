@@ -29,6 +29,7 @@ __all__ = [
     "REQUIRED_ENV",
     "clean_html",
     "extract_reply_content",
+    "site_message_text",
 ]
 
 REQUIRED_ENV = ("BASE_URL", "WS_HOST")
@@ -42,6 +43,9 @@ DISCORD_AVATAR_CACHE_PATH = Path(__file__).parent / "discord_avatar_cache.json"
 MSG_MAP_CACHE_PATH = Path(__file__).parent / "msg_map.json"
 _MSG_MAP_SAVE_INTERVAL = 5.0
 _MSG_MAP_TTL_SECONDS = 12 * 3600
+# platform: "tg"/"ds"; kind/render/preview: como re-renderizar a msg ao editar reações.
+_MSG_MAP_EXTRA_FIELDS = ("platform", "kind", "render", "preview")
+_REACTIONS_CONFIG_TTL = 3600
 LOCAL_AVATAR_DIR = Path(__file__).parent / "avatars"
 LOCAL_AVATAR_DIR.mkdir(exist_ok=True)
 
@@ -195,6 +199,21 @@ def _collapse_nested_bbcode_quotes(text: str) -> str:
     return "".join(result).strip()
 
 
+def _move_leading_text_after_quote(text: str) -> str:
+    # Quote "invertido" (texto antes do quote): o formatador só olha o que vem depois do
+    # [/quote], então o texto inicial era perdido. Reordena pra quote → texto.
+    lower = text.lower()
+    start = lower.find('[quote=')
+    if start <= 0 or not text[:start].strip():
+        return text
+    end = lower.find('[/quote]', start)
+    if end < 0:
+        return text
+    end += len('[/quote]')
+    rest = "\n".join(p for p in (text[:start].strip(), text[end:].strip()) if p)
+    return f"{text[start:end]}\n{rest}"
+
+
 def clean_html(raw_html: str) -> str:
     if not raw_html:
         return ""
@@ -204,7 +223,18 @@ def clean_html(raw_html: str) -> str:
     _strip_nested_quote_nodes(quote_nodes)
     _replace_quote_nodes_with_bbcode(quote_nodes)
     text = _soup_to_text(soup)
-    return _collapse_nested_bbcode_quotes(text)
+    return _move_leading_text_after_quote(_collapse_nested_bbcode_quotes(text))
+
+
+def site_message_text(m: dict) -> str:
+    """Texto limpo da msg do site, incluindo o reply nativo (campo reply_to) como [quote]."""
+    text = clean_html(m.get("message") or "")
+    reply = m.get("reply_to")
+    if isinstance(reply, dict) and '[quote=' not in text.lower():
+        author = (reply.get("user") or {}).get("username") or "Alguém"
+        excerpt = clean_html(reply.get("excerpt") or "")
+        text = f"[quote={author}]{excerpt}[/quote]\n{text}".strip()
+    return text
 
 
 def extract_reply_content(text: str) -> str:
@@ -358,6 +388,10 @@ class ChatBridge:
         self.avatar_cache: dict[int, dict[str, Any]] = self._load_avatar_cache()
         self.discord_avatar_cache: dict[int, dict[str, str]] = self._load_discord_avatar_cache()
         self.online: dict[int, str] = {}
+        self._reaction_emojis: list[str] = []
+        self._reaction_emojis_ts = 0.0
+        self.pending_reactions: dict[int, list] = {}
+        self.reaction_tasks: dict[int, asyncio.Task] = {}
 
     @classmethod
     def from_env(cls, cookies_path: "str | os.PathLike | None" = None) -> "ChatBridge":
@@ -725,12 +759,16 @@ class ChatBridge:
             result: OrderedDict[int, dict[str, Any]] = OrderedDict()
             for k, v in raw.items():
                 if isinstance(v, dict) and "site_id" in v:
-                    result[int(k)] = {
+                    entry = {
                         "site_id": int(v.get("site_id", 0)),
                         "handle": str(v.get("handle", "")),
                         "text": str(v.get("text", "")),
                         "ts": float(v.get("ts", now)),
                     }
+                    for extra in _MSG_MAP_EXTRA_FIELDS:
+                        if v.get(extra) is not None:
+                            entry[extra] = str(v[extra])
+                    result[int(k)] = entry
             self._prune_msg_map(result)
             return result
         except FileNotFoundError:
@@ -761,17 +799,24 @@ class ChatBridge:
         except OSError as e:
             logger.warning(f"msg_map: falha ao salvar: {e}")
 
-    def _cache_message(self, msg_id: int, site_msg_data: dict):
+    def _cache_message(self, msg_id: int, site_msg_data: dict, platform: Optional[str] = None,
+                       kind: Optional[str] = None, render: Optional[str] = None, preview: Optional[str] = None):
         user = site_msg_data.get("user") or {}
         handle = user.get("username") or user.get("name") or f"user{user.get('id')}"
         clean_text = clean_html(site_msg_data.get("message") or "")
+        if not clean_text and site_msg_data.get("sticker"):
+            clean_text = "Figurinha"
 
-        self.msg_map[msg_id] = {
+        entry = {
             "site_id": int(site_msg_data.get("id", 0)),
             "handle": str(handle).strip(),
             "text": extract_reply_content(clean_text),
             "ts": time.time(),
         }
+        for k, v in (("platform", platform), ("kind", kind), ("render", render), ("preview", preview)):
+            if v is not None:
+                entry[k] = v
+        self.msg_map[msg_id] = entry
         self._prune_msg_map()
         while len(self.msg_map) > self.cache_limit:
             self.msg_map.popitem(last=False)
@@ -949,9 +994,80 @@ class ChatBridge:
 
     def find_tg_msg_id(self, site_id: int) -> Optional[int]:
         for tg_id, entry in self.msg_map.items():
-            if entry.get("site_id") == site_id:
+            if entry.get("site_id") == site_id and entry.get("platform", "tg") == "tg":
                 return tg_id
         return None
+
+    def find_bridged_messages(self, site_id: int) -> list[tuple[int, dict]]:
+        return [(mid, e) for mid, e in self.msg_map.items() if e.get("site_id") == site_id and e.get("platform")]
+
+    async def get_site_sticker(self, m: dict) -> Optional[tuple[bytes, str]]:
+        sticker = m.get("sticker")
+        url = sticker.get("url") if isinstance(sticker, dict) else None
+        if not url or not isinstance(url, str):
+            return None
+        if not url.startswith("http"):
+            url = self.base_url.rstrip("/") + "/" + url.lstrip("/")
+        from stickers import process_site_sticker
+        return await process_site_sticker(url, self.download_image)
+
+    async def get_reaction_emojis(self) -> list[str]:
+        now = time.monotonic()
+        if self._reaction_emojis and now - self._reaction_emojis_ts < _REACTIONS_CONFIG_TTL:
+            return self._reaction_emojis
+        try:
+            resp = await self.client.get("/api/chat/config")
+            resp.raise_for_status()
+            emojis = resp.json().get("reactions") or []
+            if emojis:
+                self._reaction_emojis = [str(e) for e in emojis]
+                self._reaction_emojis_ts = now
+        except Exception as e:
+            _log_http_failure("get_reaction_emojis", e)
+        return self._reaction_emojis
+
+    async def normalize_reaction(self, emoji: str) -> Optional[str]:
+        """Mapeia o emoji do app pro equivalente aceito pelo site (ignora o variation selector)."""
+        allowed = await self.get_reaction_emojis()
+        if not allowed:
+            return emoji
+        key = emoji.replace("\ufe0f", "")
+        return next((e for e in allowed if e.replace("\ufe0f", "") == key), None)
+
+    async def toggle_reaction(self, site_msg_id: int, emoji: str) -> Optional[list]:
+        for attempt in range(2):
+            try:
+                resp = await self.client.post(f"/api/chat/message/{site_msg_id}/reaction", json={"emoji": emoji})
+                if resp.status_code in (419, 401, 403):
+                    if attempt == 0:
+                        logger.warning(f"toggle_reaction {site_msg_id}: HTTP {resp.status_code} (CSRF/sessão); renovando e retentando")
+                        await self.update_session_data()
+                        continue
+                    await self.notify_session_expired()
+                resp.raise_for_status()
+                self._mark_session_ok()
+                data = resp.json().get("data") or {}
+                return data.get("reactions") or []
+            except Exception as e:
+                _log_http_failure(f"toggle_reaction {site_msg_id}", e)
+                return None
+        return None
+
+    def _reacted_by_me(self, reactions: list, emoji: str) -> Optional[bool]:
+        if not self.aliases:
+            return None
+        key = emoji.replace("\ufe0f", "")
+        for r in reactions:
+            if str(r.get("emoji", "")).replace("\ufe0f", "") == key:
+                return any(str(u).lower() in self.aliases for u in r.get("users") or [])
+        return False
+
+    async def set_reaction(self, site_msg_id: int, emoji: str, present: bool) -> Optional[list]:
+        """Garante o estado da reação (o endpoint do site só faz toggle)."""
+        reactions = await self.toggle_reaction(site_msg_id, emoji)
+        if reactions is not None and self._reacted_by_me(reactions, emoji) is (not present):
+            reactions = await self.toggle_reaction(site_msg_id, emoji)
+        return reactions
 
     def enqueue_message(self, m: dict) -> bool:
         try:

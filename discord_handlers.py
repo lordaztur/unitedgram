@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from bridge import ChatBridge
 from formatting import build_bbcode_payload
+from site_listener import schedule_reaction_update
 from stickers import process_discord_sticker, sticker_bbcode
 
 logger = logging.getLogger(__name__)
@@ -91,25 +92,47 @@ class DiscordBot(commands.Bot):
             with contextlib.suppress(Exception):
                 await message.add_reaction("👎")
 
-    async def on_reaction_add(self, reaction, user):
-        if user.bot:
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        # Evento raw (e não on_reaction_add) pra funcionar também em msgs fora do cache
+        # do discord.py, ex.: enviadas antes de um restart.
+        if payload.user_id == self.user.id or payload.channel_id != self.channel_id:
             return
-
-        if str(reaction.emoji) != "🗑️":
+        if payload.member and payload.member.bot:
             return
+        emoji = payload.emoji
+        if emoji.is_custom_emoji():
+            return
+        cached = self.bridge.msg_map.get(payload.message_id)
+        if not cached:
+            return
+        channel = self.get_channel(self.channel_id)
+        partial = channel.get_partial_message(payload.message_id) if channel else None
 
-        msg_id = reaction.message.id
-        if msg_id in self.bridge.msg_map:
-            cached = self.bridge.msg_map[msg_id]
-
+        if str(emoji) == "🗑️":
             if await self.bridge.delete_message(cached["site_id"]):
-                try:
-                    await reaction.message.delete()
-                except Exception as e:
-                    logger.warning(f"Erro ao deletar msg no Discord: {e}")
-            else:
-                with contextlib.suppress(BaseException):
-                    await reaction.remove(user)
+                if partial:
+                    try:
+                        await partial.delete()
+                    except Exception as e:
+                        logger.warning(f"Erro ao deletar msg no Discord: {e}")
+            elif partial:
+                with contextlib.suppress(Exception):
+                    await partial.remove_reaction(emoji, discord.Object(payload.user_id))
+            return
+
+        # Reação feita no Discord vira reação no site; a nativa é removida e o resultado
+        # volta como seção de reações na própria msg (via evento reaction.message do site).
+        site_emoji = await self.bridge.normalize_reaction(str(emoji))
+        if site_emoji:
+            reactions = await self.bridge.toggle_reaction(cached["site_id"], site_emoji)
+            if reactions is not None:
+                schedule_reaction_update(self.bridge, cached["site_id"], reactions)
+        else:
+            logger.info(f"on_raw_reaction_add: emoji {emoji} não é aceito como reação no site")
+
+        if partial:
+            with contextlib.suppress(Exception):
+                await partial.remove_reaction(emoji, discord.Object(payload.user_id))
 
     async def setup_hook(self):
         @self.command()

@@ -3,7 +3,10 @@ import re
 
 from config import settings
 
-__all__ = ["format_telegram_message", "format_discord_message", "build_bbcode_payload"]
+__all__ = [
+    "format_telegram_message", "format_discord_message", "build_bbcode_payload",
+    "format_reactions_telegram", "format_reactions_discord",
+]
 
 _RE_NEW = re.compile(
     r"\[quote=(?P<to>[^\]]+)\](?P<quoted>.*?)\[/quote\](?:\s*(?P<reply>.*))?",
@@ -42,7 +45,7 @@ def tag_aliases(bridge, text):
 
 
 def format_telegram_message(bridge, msg_data: dict) -> str:
-    from bridge import clean_html
+    from bridge import site_message_text
 
     user = msg_data.get("user") or {}
     username = user.get("username") or user.get("name") or "Desconhecido"
@@ -52,7 +55,7 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
 
     display_name = html.escape("Você" if is_me else username)
 
-    raw_text = clean_html(msg_data.get("message") or "")
+    raw_text = site_message_text(msg_data)
 
     if not raw_text.strip():
         return f"💬 <b>{display_name}</b> enviou:"
@@ -117,7 +120,7 @@ def format_telegram_message(bridge, msg_data: dict) -> str:
 
 
 def format_discord_message(bridge, msg_data: dict) -> str:
-    from bridge import clean_html
+    from bridge import site_message_text
 
     user = msg_data.get("user") or {}
     username = user.get("username") or user.get("name") or "Desconhecido"
@@ -127,7 +130,7 @@ def format_discord_message(bridge, msg_data: dict) -> str:
 
     display_name = "**Você**" if is_me else f"**{username}**"
 
-    raw_text = clean_html(msg_data.get("message") or "")
+    raw_text = site_message_text(msg_data)
 
     if not raw_text.strip():
         return f"💬 {display_name} enviou:"
@@ -217,6 +220,29 @@ def format_discord_body(bridge, raw_text: str) -> str:
             return f"citou {to_user_disp}:\n{quoted_format}"
 
     return tag_aliases(bridge, raw_text)
+
+
+def _reaction_lines(reactions) -> list[tuple[str, list[str]]]:
+    lines = []
+    for r in reactions or []:
+        emoji = str(r.get("emoji") or "").strip()
+        users = [str(u) for u in r.get("users") or [] if u]
+        if emoji and users:
+            lines.append((emoji, users))
+    return lines
+
+
+def format_reactions_telegram(reactions) -> str:
+    lines = _reaction_lines(reactions)
+    if not lines:
+        return ""
+    body = "\n".join(f"{e} <i>{html.escape(', '.join(u))}</i>" for e, u in lines)
+    return f"\n\n{body}"
+
+
+def format_reactions_discord(reactions) -> str:
+    """Reações como "pílulas" em código inline (lembram as reações nativas do Discord)."""
+    return "  ".join(f"`{e} {', '.join(u).replace('`', '')}`" for e, u in _reaction_lines(reactions))
 
 
 def build_bbcode_payload(original_data: dict, reply_text: str) -> str:
